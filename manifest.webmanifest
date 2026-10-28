@@ -1,0 +1,17 @@
+{
+  "name": "Life Path 30",
+  "short_name": "Life Path 30",
+  "description": "A 3D 30-year life simulator: pick a life card each year, decide on income protection, and see your net worth and happiness at the end.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#BFE6F2",
+  "theme_color": "#0E6B5C",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
