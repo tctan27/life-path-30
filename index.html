@@ -1,0 +1,1338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="A 3D 30-year life simulator: pick a life card each year, decide on income protection, and see your net worth and happiness at the end.">
+<title>Life Path 30</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700;800&display=swap">
+<style>
+/* Layout: a full-screen 3D world (a winding road, one tile per year of life) with a glass HUD on top, a card table in the middle and the draw button at the bottom.
+   Single bright daytime look by design: every colour is set explicitly. */
+:root {
+  --ink: #13211F;
+  --muted: #5A6B68;
+  --glass: rgba(255, 255, 255, .9);
+  --line: rgba(19, 33, 31, .1);
+  --accent: #0E6B5C;
+  --gold: #D99A1E;
+  --bad: #C2412D;
+  --sky: #BFE6F2;
+  --font-display: "Bricolage Grotesque", system-ui, sans-serif;
+  --font-body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --pad-l: max(16px, env(safe-area-inset-left, 0px));
+  --pad-r: max(16px, env(safe-area-inset-right, 0px));
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--font-body); font-size: 15px; overflow: hidden; -webkit-tap-highlight-color: transparent; }
+#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+button { font: inherit; }
+.btn { appearance: none; border: 0; border-radius: 14px; padding: 14px 18px; font-weight: 700; font-size: 16px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; }
+.btn-primary { background: var(--accent); color: #fff; box-shadow: 0 6px 18px rgba(14, 107, 92, .35); }
+.btn-gold { background: var(--gold); color: #2A1C00; }
+.btn-ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn:focus-visible, input:focus-visible, select:focus-visible, .choice:focus-visible, .mini:focus-visible, .chips:focus-visible, .seg button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+
+/* HUD */
+.hud { position: fixed; top: 0; left: 0; right: 0; padding: calc(10px + env(safe-area-inset-top, 0px)) var(--pad-r) 0 var(--pad-l); display: flex; flex-direction: column; gap: 8px; pointer-events: none; z-index: 5; }
+.who { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.who .id { background: var(--glass); border-radius: 14px; padding: 8px 12px; box-shadow: 0 4px 14px rgba(0,0,0,.08); min-width: 0; }
+.who .id b { font-family: var(--font-display); font-size: 17px; display: block; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.who .id span { font-size: 12px; color: var(--muted); }
+.age { background: var(--ink); color: #fff; border-radius: 14px; padding: 6px 12px; text-align: center; flex: none; }
+.age small { display: block; font-size: 10px; letter-spacing: .1em; opacity: .7; font-weight: 700; }
+.age b { font-family: var(--font-display); font-size: 24px; line-height: 1; }
+.chips { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; pointer-events: auto; cursor: pointer; border: 0; padding: 0; background: none; text-align: left; color: inherit; border-radius: 12px; }
+.chip { background: var(--glass); border-radius: 12px; padding: 6px 8px; box-shadow: 0 4px 14px rgba(0,0,0,.06); min-width: 0; }
+.chip span { display: block; font-size: 10px; font-weight: 700; letter-spacing: .06em; color: var(--muted); text-transform: uppercase; white-space: nowrap; }
+.chip b { font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; transition: color .3s; }
+.chip .in { color: var(--accent); }
+.chip .out { color: var(--bad); }
+.heart { height: 6px; border-radius: 3px; background: rgba(0,0,0,.08); margin-top: 5px; overflow: hidden; }
+.heart i { display: block; height: 100%; background: linear-gradient(90deg, #E86A5A, #F2A65A); transition: width .5s; }
+.badges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.badge { font-size: 11px; font-weight: 800; letter-spacing: .04em; border-radius: 999px; padding: 4px 10px; background: var(--glass); color: var(--muted); }
+.badge.on { background: var(--accent); color: #fff; }
+.badge.bad { background: var(--bad); color: #fff; }
+.badge.cf { background: var(--ink); color: #fff; pointer-events: auto; cursor: pointer; border: 0; font: 800 11px var(--font-body); letter-spacing: .04em; }
+.flash-up { color: var(--accent) !important; }
+.flash-down { color: var(--bad) !important; }
+
+/* Bottom */
+.bottom { position: fixed; left: 0; right: 0; bottom: 0; padding: 0 var(--pad-r) calc(14px + env(safe-area-inset-bottom, 0px)) var(--pad-l); display: flex; flex-direction: column; gap: 10px; z-index: 5; }
+.years { display: grid; grid-template-columns: repeat(30, 1fr); gap: 2px; background: var(--glass); padding: 5px; border-radius: 10px; }
+.years i { height: 8px; border-radius: 2px; background: rgba(0,0,0,.08); }
+.years i.now { outline: 2px solid var(--ink); outline-offset: 1px; }
+#draw { width: 100%; max-width: 520px; align-self: center; padding: 17px; font-size: 17px; }
+.toast { position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 16px; font-weight: 700; font-size: 13px; z-index: 8; pointer-events: none; animation: toast 2.2s ease both; font-variant-numeric: tabular-nums; text-align: center; max-width: calc(100% - 32px); }
+.toast small { display: block; font-weight: 600; opacity: .8; font-size: 12px; margin-top: 2px; }
+@keyframes toast { 0% { opacity: 0; transform: translate(-50%, -30%); } 12%, 80% { opacity: 1; transform: translate(-50%, -50%); } 100% { opacity: 0; transform: translate(-50%, -80%); } }
+
+/* Card table */
+.table { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; background: rgba(10, 24, 22, .4); padding: calc(12px + env(safe-area-inset-top, 0px)) var(--pad-r) calc(12px + env(safe-area-inset-bottom, 0px)) var(--pad-l); overflow-y: auto; }
+.deckwrap { margin: auto; width: 100%; max-width: 380px; display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; }
+.deck-title { color: #fff; font-family: var(--font-display); font-size: 24px; font-weight: 800; margin: 0; text-shadow: 0 2px 10px rgba(0,0,0,.3); }
+.deck-sub { color: rgba(255,255,255,.92); font-size: 14px; margin: 0; text-shadow: 0 1px 6px rgba(0,0,0,.35); }
+.deck { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; width: 100%; }
+.deck.one { grid-template-columns: minmax(0, 150px); justify-content: center; }
+.mini { appearance: none; aspect-ratio: 3 / 4.3; border-radius: 14px; border: 4px solid #fff; color: #fff; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 6px; box-shadow: 0 14px 30px rgba(0,0,0,.3); transition: transform .25s, opacity .25s; background: repeating-linear-gradient(45deg, #0E5A4E 0 10px, #12705F 10px 20px); animation: deal .45s cubic-bezier(.2,.8,.3,1.2) both; }
+.mini:nth-child(2) { animation-delay: .08s; } .mini:nth-child(3) { animation-delay: .16s; }
+@keyframes deal { from { transform: translateY(40px) rotate(-6deg); opacity: 0; } to { transform: none; opacity: 1; } }
+.mini:hover { transform: translateY(-8px); }
+.mini b { font-family: var(--font-display); font-size: 22px; line-height: 1; }
+.mini small { font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; opacity: .85; }
+.mini.fate { background: repeating-linear-gradient(45deg, #9E2F21 0 10px, #B83A2A 10px 20px); }
+.mini.prot { background: repeating-linear-gradient(45deg, #0E6B5C 0 10px, #B88416 10px 20px); }
+.mini.chosen { transform: scale(1.12) translateY(-10px); }
+.mini.gone { opacity: .25; transform: scale(.9); }
+.card { width: 100%; max-width: 340px; perspective: 1200px; margin: auto; }
+.card-in { position: relative; transform-style: preserve-3d; transition: transform .7s cubic-bezier(.2,.75,.25,1.05); }
+.card.flip .card-in { transform: rotateY(180deg); }
+.face { backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: 20px; box-shadow: 0 24px 50px rgba(0,0,0,.3); }
+.back { position: absolute; inset: 0; min-height: 380px; background: repeating-linear-gradient(45deg, #0E5A4E 0 12px, #12705F 12px 24px); display: flex; align-items: center; justify-content: center; border: 6px solid #fff; }
+.back b { font-family: var(--font-display); color: #fff; font-size: 30px; letter-spacing: .02em; text-align: center; line-height: 1; }
+.back b small { display: block; font-size: 12px; font-family: var(--font-body); letter-spacing: .14em; margin-top: 8px; opacity: .8; }
+.front { transform: rotateY(180deg); background: #fff; overflow: hidden; min-height: 380px; display: flex; flex-direction: column; }
+.band { padding: 16px 18px 14px; color: #fff; display: flex; align-items: center; gap: 12px; }
+.band svg { width: 38px; height: 38px; flex: none; }
+.band small { display: block; font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; opacity: .9; }
+.band h3 { margin: 0; font-family: var(--font-display); font-size: 22px; line-height: 1.1; }
+.body { padding: 14px 18px 18px; display: flex; flex-direction: column; gap: 12px; flex: 1; }
+.body p { margin: 0; line-height: 1.45; }
+.terms { background: #F1F7F5; border-radius: 12px; padding: 10px 12px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; font-variant-numeric: tabular-nums; }
+.terms div { display: flex; justify-content: space-between; gap: 8px; }
+.terms span { color: var(--muted); }
+.fx { display: flex; flex-direction: column; gap: 4px; font-variant-numeric: tabular-nums; font-size: 14px; }
+.fx div { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px dashed var(--line); }
+.fx div > span:last-child { text-align: right; }
+.fx .up { color: var(--accent); font-weight: 700; }
+.fx .down { color: var(--bad); font-weight: 700; }
+.fx .neu { color: var(--muted); font-weight: 600; }
+.fx .tot { border-bottom: 0; font-weight: 800; padding-top: 8px; }
+.fx .tot span:last-child { font-family: var(--font-display); font-size: 20px; }
+.missed { font-size: 12px; color: var(--muted); background: #F4F6F6; border-radius: 10px; padding: 7px 10px; }
+.acts { display: grid; gap: 8px; margin-top: auto; }
+.choice { appearance: none; text-align: left; border: 1.5px solid var(--line); background: #fff; color: var(--ink); border-radius: 14px; padding: 11px 13px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+.choice:hover:not(:disabled) { border-color: var(--accent); }
+.choice b { font-size: 15px; }
+.choice span { font-size: 12px; color: var(--muted); }
+.choice:disabled { opacity: .45; cursor: default; }
+
+/* Cash flow sheet */
+.cfsheet { margin: auto; width: 100%; max-width: 380px; background: #fff; border-radius: 20px; padding: 18px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 24px 50px rgba(0,0,0,.3); }
+.cfsheet h3 { margin: 0; font-family: var(--font-display); font-size: 22px; }
+.cfsec { font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-top: 4px; }
+.cfrow { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.cfrow .bar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: #EEF2F1; overflow: hidden; }
+.cfrow .bar i { display: block; height: 100%; border-radius: 3px; }
+.cfnet { display: flex; justify-content: space-between; align-items: baseline; border-top: 2px solid var(--ink); padding-top: 10px; font-weight: 800; }
+.cfnet b { font-family: var(--font-display); font-size: 24px; font-variant-numeric: tabular-nums; }
+
+/* Start + end screens */
+.screen { position: fixed; inset: 0; z-index: 20; overflow-y: auto; display: flex; padding: calc(16px + env(safe-area-inset-top, 0px)) var(--pad-r) calc(16px + env(safe-area-inset-bottom, 0px)) var(--pad-l); background: linear-gradient(180deg, rgba(191,230,242,.25), rgba(191,230,242,.85) 55%); }
+.sheet { margin: auto; width: 100%; max-width: 460px; background: #fff; border-radius: 24px; padding: 22px; box-shadow: 0 30px 60px rgba(0,0,0,.18); display: flex; flex-direction: column; gap: 14px; }
+.eyebrow { font-size: 12px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin: 0; }
+.sheet h1, .sheet h2 { font-family: var(--font-display); margin: 0; letter-spacing: -.02em; line-height: 1.05; text-wrap: balance; }
+.sheet h1 { font-size: clamp(30px, 8vw, 40px); }
+.sheet h2 { font-size: clamp(24px, 6.5vw, 32px); }
+.sheet p { margin: 0; line-height: 1.5; }
+.lead { color: var(--muted); }
+.f { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.f label, .flabel { font-size: 13px; font-weight: 700; }
+.f input, .f select { width: 100%; border: 1.5px solid #D5DEDC; border-radius: 12px; padding: 11px 12px; font: 600 16px var(--font-body); color: var(--ink); background: #F7FAF9; }
+.f small { font-size: 12px; color: var(--muted); }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.seg button { appearance: none; border: 1.5px solid #D5DEDC; background: #F7FAF9; color: var(--ink); border-radius: 12px; padding: 9px 6px; cursor: pointer; display: flex; flex-direction: column; gap: 1px; text-align: center; }
+.seg button b { font-size: 14px; }
+.seg button span { font-size: 11px; color: var(--muted); line-height: 1.25; }
+.seg button[aria-pressed="true"] { border-color: var(--accent); background: #E3F2EE; }
+.seg button[data-d="hard"][aria-pressed="true"] { border-color: var(--bad); background: #FBE7E2; }
+.how { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 12px; color: var(--muted); }
+.how div { background: #F1F7F5; border-radius: 12px; padding: 10px; }
+.how b { display: block; color: var(--ink); font-size: 13px; margin-bottom: 2px; }
+.big { font-family: var(--font-display); font-size: 40px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #E3EAE8; border-radius: 14px; overflow: hidden; border: 1px solid #E3EAE8; }
+.stats div { background: #fff; padding: 11px 13px; min-width: 0; }
+.stats span { display: block; font-size: 11px; color: var(--muted); font-weight: 600; }
+.stats b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.whatif { border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 4px; }
+.whatif.good { background: #E3F2EE; }
+.whatif.bad { background: #FBE7E2; }
+.whatif b { font-variant-numeric: tabular-nums; }
+.timeline { display: flex; flex-direction: column; max-height: 260px; overflow-y: auto; border: 1px solid #E3EAE8; border-radius: 14px; }
+.timeline div { display: grid; grid-template-columns: 52px 12px 1fr; gap: 8px; align-items: center; padding: 7px 12px; border-bottom: 1px solid #EEF2F1; font-size: 13px; }
+.timeline div:last-child { border-bottom: 0; }
+.timeline em { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; font-weight: 700; }
+.timeline i { width: 10px; height: 10px; border-radius: 3px; }
+.note { font-size: 12px; color: var(--muted); }
+.copied { font-size: 13px; color: var(--accent); text-align: center; min-height: 1.2em; }
+.fallback { width: 100%; min-height: 70px; border: 1px solid #D5DEDC; border-radius: 10px; padding: 8px; font: 13px var(--font-body); }
+/* Mini-games and investment window */
+.mg { margin: auto; width: 100%; max-width: 360px; background: #fff; border-radius: 20px; padding: 18px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 24px 50px rgba(0,0,0,.3); }
+.mg h3 { margin: 0; font-family: var(--font-display); font-size: 21px; line-height: 1.15; }
+.mg p { margin: 0; }
+.needlebar { position: relative; height: 50px; border-radius: 12px; background: #EEF2F1; overflow: hidden; cursor: pointer; }
+.needlebar .near { position: absolute; top: 0; bottom: 0; background: #F6E4C0; }
+.needlebar .win { position: absolute; top: 0; bottom: 0; background: #E9B949; }
+.needlebar b { position: absolute; top: 0; bottom: 0; width: 4px; margin-left: -2px; background: #13211F; border-radius: 2px; }
+#rc { width: 100%; max-width: 300px; aspect-ratio: 1; align-self: center; border-radius: 14px; touch-action: none; }
+.assets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.asset { appearance: none; text-align: left; border: 1.5px solid var(--line); background: #fff; border-radius: 12px; padding: 9px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 1px; color: var(--ink); }
+.asset[aria-pressed="true"] { border-color: var(--ink); background: #F1F7F5; box-shadow: inset 0 0 0 1px var(--ink); }
+.asset b { font-size: 13px; line-height: 1.2; }
+.asset span { font-size: 11px; color: var(--muted); }
+.asset i { font-style: normal; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.amt { display: flex; gap: 6px; flex-wrap: wrap; }
+.amt input { flex: 1 1 120px; min-width: 0; border: 1.5px solid #D5DEDC; border-radius: 12px; padding: 10px 12px; font: 700 17px var(--font-body); color: var(--ink); }
+.amt button { border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 10px; padding: 8px 10px; font-weight: 700; cursor: pointer; }
+.hold { font-size: 13px; display: flex; flex-direction: column; gap: 4px; font-variant-numeric: tabular-nums; background: #F4F6F6; border-radius: 10px; padding: 8px 10px; }
+.hold div { display: flex; justify-content: space-between; gap: 8px; }
+.err { color: var(--bad); font-size: 13px; min-height: 1.2em; }
+.quizval { font-family: var(--font-display); font-size: 30px; font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; }
+.quiz input { width: 100%; accent-color: var(--bad); }
+.badgegrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+.bdg { border-radius: 12px; padding: 9px 10px; background: #F1F7F5; display: flex; flex-direction: column; gap: 2px; }
+.bdg b { font-size: 13px; }
+.bdg span { font-size: 11px; color: var(--muted); }
+.bdg.neg { background: #FBE7E2; }
+.seg.g2 { grid-template-columns: 1fr 1fr; }
+@media (max-width: 360px) { .chips { grid-template-columns: repeat(2, minmax(0, 1fr)); } .row2 { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .card-in, .mini { transition: none; animation: none; } .toast { animation-duration: .01s; } }
+</style>
+</head>
+<body>
+
+<canvas id="scene" aria-label="3D life path"></canvas>
+
+<div class="hud" id="hud" hidden>
+  <div class="who">
+    <div class="id"><b id="h-name"></b><span id="h-occ"></span></div>
+    <div class="age"><small>AGE</small><b id="h-age"></b></div>
+  </div>
+  <button class="chips" id="chips" type="button" aria-label="Open cash flow">
+    <div class="chip"><span>Savings</span><b id="h-sav"></b></div>
+    <div class="chip"><span>In /mo</span><b class="in" id="h-in"></b></div>
+    <div class="chip"><span>Out /mo</span><b class="out" id="h-out"></b></div>
+    <div class="chip"><span>Happiness</span><b id="h-hnum"></b><div class="heart"><i id="h-happy"></i></div></div>
+  </button>
+  <div class="badges" id="h-badges"></div>
+</div>
+
+<div class="bottom" id="bottom" hidden>
+  <div class="years" id="years" aria-hidden="true"></div>
+</div>
+
+<div class="table" id="table" hidden></div>
+<div class="table" id="cf" hidden style="z-index:15"></div>
+
+<!-- Start -->
+<div class="screen" id="start">
+  <form class="sheet" id="start-form" autocomplete="off">
+    <p class="eyebrow">A 30-year life simulator</p>
+    <h1>Life Path 30</h1>
+    <p class="lead">Every year, pick one of three life cards. Promotions, weddings, rent hikes, illness. In 30 years, how much will you have, and how happy will you be?</p>
+    <div class="f"><label for="in-name">Your name</label><input id="in-name" maxlength="20" placeholder="e.g. Aiman" required></div>
+    <div class="row2">
+      <div class="f"><label for="in-age">Age</label><input id="in-age" type="number" inputmode="numeric" min="20" max="45" value="28" required></div>
+      <div class="f"><label for="in-occ">Occupation</label><select id="in-occ"></select></div>
+    </div>
+    <div class="f"><label for="in-inc">Monthly salary (RM)</label><input id="in-inc" type="number" inputmode="numeric" min="1500" max="100000" step="100" required><small>Filled in from a typical example income for this occupation. Change it to match yours.</small></div>
+    <div class="f"><span class="flabel">Your life dream</span><div class="seg g2" id="goals"></div></div>
+    <div class="how">
+      <div><b>Pick</b>1 of 3 cards a year</div>
+      <div><b>Protect</b>Money and happiness</div>
+      <div><b>Finish</b>See your life at <span id="end-age">58</span></div>
+    </div>
+    <button class="btn btn-primary" type="submit">Start my 30 years</button>
+    <p class="note">For illustration and education only. All numbers are simplified examples. Nothing you type is stored or sent anywhere.</p>
+  </form>
+</div>
+
+<!-- End -->
+<div class="screen" id="end" hidden>
+  <div class="sheet" id="end-sheet"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// TC's WhatsApp number in international format, digits only (e.g. "60123456789"). Empty: the player picks the contact.
+const WHATSAPP_NUMBER = "";
+const YEARS = 30;
+
+// Typical example monthly incomes (illustrative, editable by the player).
+const OCCUPATIONS = [
+  ["Admin clerk", 2800], ["E-hailing driver", 3200], ["Sales executive", 4000], ["Nurse", 4300], ["Teacher", 4500],
+  ["Accountant", 6000], ["Engineer", 6500], ["Software developer", 7500], ["Business owner", 10000], ["Doctor", 12000]
+];
+// One realistic level: most of the salary is already spoken for, savings start thin, prices rise as fast as pay.
+const LEVEL = { sav: 2, neg: 1.05, smalls: 2, big: 1.05, grow: 0.03, infl: 0.02, living: 0.55, rent: 0.25 };
+
+const rm = (n) => "RM " + Math.round(Math.abs(n)).toLocaleString("en-MY");
+const srm = (n) => (n < 0 ? "−" : "+") + rm(n);
+// Short form for the narrow HUD: RM 51.7k, RM 1.24M.
+const krm = (n) => { const a = Math.abs(n), sg = n < 0 ? "−" : "";
+  return a >= 1e6 ? `${sg}RM ${(a / 1e6).toFixed(2)}M` : a >= 1e4 ? `${sg}RM ${(a / 1e3).toFixed(1)}k` : sg + rm(a); };
+const round = (n, to = 10) => Math.round(n / to) * to;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+// =====================================================================
+// Life engine. Pure functions on a state object, so the "what if" life can replay the same cards.
+// Monthly cash flow is kept as parts: salary + side income in; living, housing, car, children, medical and premium out.
+// =====================================================================
+const TYPES = {
+  career:  { label: "Career",           color: "#2E9E6B", icon: "up" },
+  windfall:{ label: "Windfall",         color: "#4BAE4F", icon: "coin" },
+  spend:   { label: "Spending",         color: "#D9822B", icon: "coin" },
+  family:  { label: "Family",           color: "#D6618A", icon: "heart" },
+  home:    { label: "Home",             color: "#7A5CC2", icon: "home" },
+  choice:  { label: "Decision",         color: "#3B6FD8", icon: "fork" },
+  bad:     { label: "Setback",          color: "#A8553A", icon: "down" },
+  offer:   { label: "Protection",       color: "#0E6B5C", icon: "shield" },
+  small:   { label: "Health",           color: "#E07B39", icon: "cross" },
+  big:     { label: "Critical illness", color: "#C2412D", icon: "cross" },
+  recover: { label: "Recovery",         color: "#8E5A52", icon: "bed" },
+  claim:   { label: "Claim paid",       color: "#D99A1E", icon: "shield" },
+  quiet:   { label: "Life",             color: "#7C8C89", icon: "dot" }
+};
+const BIG = [
+  { name: "Cancer", text: "is diagnosed with stage 2 cancer. Surgery, targeted therapy and a long recovery.", cost: 180000, off: 18, care: 800, ongoing: 0 },
+  { name: "Heart attack", text: "collapses at work. Bypass surgery, then months of cardiac rehab.", cost: 110000, off: 12, care: 500, ongoing: 0 },
+  { name: "Stroke", text: "suffers a stroke. Long therapy to walk and speak again, with a caregiver at home.", cost: 140000, off: 24, care: 1200, ongoing: 0 },
+  { name: "Kidney failure", text: "needs dialysis three times a week, for life.", cost: 80000, off: 12, care: 400, ongoing: 2500 },
+  { name: "Brain tumour", text: "needs brain surgery followed by radiotherapy.", cost: 160000, off: 18, care: 900, ongoing: 0 }
+];
+const SMALL = [
+  { name: "Dengue fever", text: "is hospitalised with dengue fever.", cost: 0.8, off: 1 },
+  { name: "Slipped disc", text: "hurts their back and needs surgery.", cost: 2, off: 2 },
+  { name: "Appendicitis", text: "needs an emergency appendix operation.", cost: 1.5, off: 1 },
+  { name: "Motorbike fall", text: "breaks an arm in a motorbike fall.", cost: 1, off: 2 },
+  { name: "Gallstones", text: "needs keyhole surgery for gallstones.", cost: 1.5, off: 1 },
+  { name: "Knee injury", text: "tears a ligament playing futsal.", cost: 2, off: 2 }
+];
+const SCAMS = [
+  "A forex 'guru' on Telegram promises 20% a month, guaranteed.",
+  "A friend swears this new crypto coin will 10x by Raya.",
+  "An investment club promises a fixed 5% every month, no risk."
+];
+
+// Investments: random game returns, decided once per life so the "what if" replay sees the same market.
+const ASSETS = {
+  fd:     { name: "Fixed deposit",     short: "FD",     risk: "Safe",      color: "#2E9E6B", note: "About 2.5% a year, steady" },
+  fund:   { name: "Unit trust / fund", short: "Funds",  risk: "Medium",    color: "#3B6FD8", note: "Usually grows, some down years" },
+  stock:  { name: "Individual stocks", short: "Stocks", risk: "High",      color: "#D9822B", note: "Big swings both ways" },
+  crypto: { name: "Crypto / hot tip",  short: "Crypto", risk: "Very high", color: "#C2412D", note: "Could double, could go to zero" }
+};
+function makeMarket() {
+  const gauss = () => { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+  return Array.from({ length: YEARS }, () => {
+    const crash = Math.random() < 0.1, r = Math.random();
+    return {
+      fd: 0.025,
+      fund: crash ? -0.25 : clamp(0.07 + gauss() * 0.1, -0.2, 0.35),
+      stock: crash ? -0.4 : clamp(0.08 + gauss() * 0.22, -0.45, 0.8),
+      crypto: r < 0.08 ? -0.9 : r < 0.35 ? -0.4 - Math.random() * 0.3 : r < 0.6 ? 0.8 + Math.random() * 1.2 : -0.1 + Math.random() * 0.4
+    };
+  });
+}
+const invTotal = (s) => Object.values(s.inv).reduce((a, b) => a + b, 0);
+const pct = (x) => `${x >= 0 ? "+" : "−"}${Math.abs(Math.round(x * 100))}%`;
+function invest(s, amt, a) { amt = Math.min(amt, Math.max(0, s.sav)); if (amt <= 0) return 0; s.sav -= amt; s.inv[a] += amt; s.basis[a] += amt; s.invested += amt; return amt; }
+// Forced selling to pay bills: safest first. Losses against what was put in are recorded.
+function sellInv(s, need) {
+  let got = 0;
+  for (const a of ["fd", "fund", "stock", "crypto"]) {
+    if (got >= need) break;
+    const take = Math.min(s.inv[a], need - got); if (take <= 0) continue;
+    const basis = s.basis[a] * take / s.inv[a];
+    s.saleLoss += Math.max(0, basis - take); s.basis[a] -= basis; s.inv[a] -= take; got += take;
+  }
+  s.forcedSold += got; return got;
+}
+
+// Life dreams chosen at the start; reaching one gives a big happiness boost.
+const GOALS = {
+  home:   { name: "Own a home",         desc: "Buy your own place",          check: (s) => s.everHouse },
+  travel: { name: "See the world",      desc: "Take 2 family holidays",      check: (s) => s.holidays >= 2 },
+  uni:    { name: "Kids to university", desc: "Send a child to university",  check: (s) => s.uni >= 1 },
+  rich:   { name: "Retire comfortably", desc: "Net worth of 100× your salary", check: (s) => netWorth(s) >= s.startSalary * 100 }
+};
+function checkGoal(s) { if (s.goalDone == null && GOALS[s.goal].check(s)) { s.goalDone = s.year; happy(s, 12); return true; } return false; }
+
+function newLife(o) {
+  const sal = o.income;
+  return {
+    name: o.name, occ: o.occ, age0: o.age, year: 0, goal: o.goal || "home", goalDone: null, startSalary: sal,
+    market: o.market || makeMarket(), inv: { fd: 0, fund: 0, stock: 0, crypto: 0 }, basis: { fd: 0, fund: 0, stock: 0, crypto: 0 }, invested: 0, forcedSold: 0, saleLoss: 0, lastMarket: null,
+    holidays: 0, everHouse: false, promoTries: 0, promoWins: 0, scamSpotted: false, quizGuess: null, quizClose: false,
+    salary: sal, side: 0, living: round(sal * LEVEL.living, 50), rent: round(sal * LEVEL.rent, 50), loan: 0, carLoan: 0, carYears: 0, kidsCost: 0, ongoing: 0, care: 0,
+    sav: round(sal * LEVEL.sav, 100), card: 0, fam: 0, happy: 60, hd: 0,
+    insured: false, premium: 0, cover: 0, boughtAge: 0,
+    off: 0, lying: false,
+    married: false, kids: 0, uni: 0, house: false, houseValue: 0, houseDebt: 0, housePrice: 0, houseYear: 0, sold: 0,
+    car: "old", carKept: false, once: {},
+    premPaid: 0, claims: 0, interest: 0, charity: false, charityGot: 0, famBorrowed: 0, famUses: 0, famRefused: false, cardUses: 0, bankrupt: false, bigName: "", bigInsured: null, hadBig: false, bigTotal: 0
+  };
+}
+const ageOf = (s) => s.age0 + s.year;
+const D_ = () => LEVEL;
+function planTerms(s) {
+  const premium = round(s.salary * 12 * 0.045 * (1 + Math.max(0, ageOf(s) - 25) * 0.035), 10);
+  return { premium, cover: round(s.salary * 48, 1000) };
+}
+// Happiness 0-100. hd collects this card's change so the card can show it.
+const happy = (s, n) => { const b = s.happy; s.happy = clamp(s.happy + n, 0, 100); s.hd += s.happy - b; };
+function mood(h) { return h >= 75 ? ["Thriving", "#2E9E6B"] : h >= 55 ? ["Content", "#7FAE3E"] : h >= 35 ? ["Stressed", "#D9822B"] : ["Struggling", "#C2412D"]; }
+const housing = (s) => s.house ? s.loan : s.rent;
+function cashIn(s) { return s.off > 0 ? (s.insured ? round(s.salary * 0.7) : 0) : s.salary + s.side; }
+const cardPay = (s) => s.card > 0 ? Math.max(100, round(s.card * 0.05)) : 0;
+function cashOut(s) { return s.living + housing(s) + s.carLoan + s.kidsCost + s.ongoing + (s.off > 0 ? s.care : 0) + round(s.premium / 12) + cardPay(s); }
+const equity = (s) => s.house ? Math.round(s.houseValue - s.houseDebt) : 0;
+const netWorth = (s) => s.sav - s.card - s.fam + equity(s) + invTotal(s);
+const bump = (s, f) => round(s.salary * f, 50);
+
+// Card: type, mood (good | bad | neutral, used for difficulty weighting), w (base weight), when(s), title, text, choices, apply(s, choice, p) -> lines
+const CARDS = {
+  // ---- Fate and protection (scheduled) ----
+  offer1: { type: "offer", title: () => "Protect your income?",
+    text: (s) => `A financial planner shows ${s.name} an Income Protection Plan. It pays a lump sum on critical illness, plus 70% of salary while you can't work.`,
+    terms: true, choices: [["buy", "Buy the plan", "Pay the premium every year"], ["decline", "No thanks", "Keep the money for now"]],
+    apply: (s, c) => c === "buy" ? buy(s) : [["Decision", "Declined the plan", "neu"]] },
+  offer2: { type: "offer", title: () => "A second chance",
+    text: (s) => `The planner checks in again. ${s.name} is older now, so the premium is higher than last time.`,
+    terms: true, choices: [["buy", "Buy the plan now", "Higher premium, same protection"], ["decline", "Still no", "Hope nothing happens"]],
+    apply: (s, c) => c === "buy" ? buy(s) : [["Decision", "Declined again", "neu"]] },
+  big: { type: "big", title: (s, p) => BIG[p].name,
+    text: (s, p) => `${s.name} ${BIG[p].text}`,
+    apply: (s, c, p) => {
+      const { b, cost, ong, care, lost, careTot } = bigCost(s, p);
+      s.sav -= cost; s.off += b.off; s.care = care; s.ongoing += ong; s.lying = true; s.hadBig = true; s.bigName = b.name; s.bigInsured = s.insured;
+      s.bigTotal = cost + lost + careTot;
+      const L = [["Treatment and hospital", -cost], [`Salary lost (${b.off} months)`, -lost], ["Caregiver and recovery", -careTot]];
+      if (ong) L.push(["Dialysis for life", `−${rm(ong)}/mo`, "down"]);
+      L.push(["Total cost of this illness", -s.bigTotal, "tot"]);
+      if (s.insured) { s.sav += s.cover; s.claims += s.cover; L.push(["Plan pays lump sum", s.cover], ["Plan pays monthly", `${rm(round(s.salary * 0.7))}/mo while off`, "up"]); happy(s, -8); }
+      else { L.push(["Paid by insurance", "RM 0. All from your pocket.", "down"]); happy(s, -25); }
+      return L;
+    } },
+  small: { type: "small", title: (s, p) => SMALL[p].name,
+    text: (s, p) => `${s.name} ${SMALL[p].text}`,
+    apply: (s, c, p) => { const m = SMALL[p], cost = round(s.salary * m.cost, 100); s.sav -= cost; s.off += m.off; happy(s, -4);
+      return [["Hospital bill", -cost], ["Off work", `${m.off} month${m.off > 1 ? "s" : ""}${s.insured ? ", plan pays 70%" : ", no salary"}`, s.insured ? "up" : "down"]]; } },
+  recover: { type: "recover", title: () => "Still recovering",
+    text: (s) => `${s.name} is still too unwell to work. The bills keep coming.`,
+    apply: (s) => [["Off work", s.insured ? "Plan pays 70% of salary" : "No salary this year", s.insured ? "up" : "down"]] },
+
+  // ---- Career and money ----
+  // Mini-game cards: the result of the game arrives in p.
+  promo: { type: "career", mood: "good", w: 3, title: () => "Promotion challenge", text: (s) => `A senior role opens up. ${s.name} has one shot at the big presentation.`,
+    apply: (s, c, p) => {
+      if (p.tier === "win") { const d = bump(s, 0.15); s.salary += d; s.promoWins++; happy(s, 6); return [["Nailed it! Promoted", `+${rm(d)}/mo`, "up"]]; }
+      if (p.tier === "near") { const d = bump(s, 0.05); s.salary += d; happy(s, 1); return [["Close. A small raise instead", `+${rm(d)}/mo`, "up"]]; }
+      happy(s, -3); return [["Someone else got the job", "No raise this time", "down"]]; } },
+  bonus: { type: "career", mood: "good", w: 3, title: () => "Payday rush", text: (s) => `Year-end bonus season. The more coins ${s.name} catches, the bigger the bonus.`,
+    apply: (s, c, p) => { const d = round(Math.max(0, p.score) * s.salary * 0.15, 100); s.sav += d; if (d) happy(s, 3); return [[`Caught ${p.score} coin${p.score === 1 ? "" : "s"}`, d ? d : "No bonus this year", d ? undefined : "down"]]; } },
+  side: { type: "career", mood: "good", w: 2, when: (s) => s.side < s.salary * 0.3, title: () => "Side income", text: (s) => `${s.name} starts weekend tuition and online selling.`,
+    apply: (s) => { const d = bump(s, 0.08); s.side += d; happy(s, 2); return [["Side income", `+${rm(d)}/mo`, "up"]]; } },
+  jobhop: { type: "career", mood: "good", w: 1, when: (s) => !s.once.jobhop && ageOf(s) < 50, title: () => "Headhunted", text: (s) => `Another company offers ${s.name} a better package.`,
+    apply: (s) => { s.once.jobhop = 1; const d = bump(s, 0.2); s.salary += d; happy(s, 5); return [["Salary", `+${rm(d)}/mo`, "up"]]; } },
+  course: { type: "choice", mood: "neutral", w: 2, when: (s) => !s.once.course, title: () => "Professional course", text: (s) => `A certification could lift ${s.name}'s pay, but it costs a month's salary and many weekends.`,
+    choices: [["take", "Sign up", `Pay now, earn more later`], ["skip", "Not now", "Keep the weekends free"]],
+    apply: (s, c) => { s.once.course = 1; if (c !== "take") return [["Decision", "Skipped the course", "neu"]]; const cost = s.salary, d = bump(s, 0.15); s.sav -= cost; s.salary += d; return [["Course fee", -cost], ["Salary after passing", `+${rm(d)}/mo`, "up"]]; } },
+  windfall: { type: "windfall", mood: "good", w: 1, title: () => "Lucky draw!", text: (s) => `${s.name} wins the lucky draw at the company dinner.`,
+    apply: (s) => { const d = round(s.salary, 500); s.sav += d; happy(s, 4); return [["Prize", d]]; } },
+  sidebiz: { type: "choice", mood: "neutral", w: 1, when: (s) => !s.once.biz, title: () => "Open a café with a friend?", text: (s) => `A friend wants ${s.name} as a partner in a small café. It could work. Or not.`,
+    choices: [["invest", "Invest", "Put in 3 months of salary"], ["pass", "Pass", "Too risky right now"]],
+    apply: (s, c, p) => { s.once.biz = 1; if (c !== "invest") return [["Decision", "Passed on the café", "neu"]]; const amt = s.salary * 3; s.sav -= amt;
+      if (p.win) { const back = amt * 2.5; s.sav += back; happy(s, 6); return [["Investment", -amt], ["The café is a hit! Share sold", back]]; }
+      happy(s, -6); return [["Investment", -amt], ["The café closes after a year", "Money gone", "down"]]; } },
+  retrench: { type: "bad", mood: "bad", w: 1, when: (s) => ageOf(s) >= 35, title: () => "Company restructuring", text: (s) => `${s.name}'s department is cut. It takes three months to find a new job.`,
+    apply: (s) => { const d = s.salary * 3; s.sav -= d; happy(s, -8); return [["3 months without salary", -d]]; } },
+  scam: { type: "choice", mood: "bad", w: 2, when: (s) => !s.once.scam, title: () => "Spot the scam", text: (s) => `Friends share three "investment opportunities". One of them is a scam.`,
+    apply: (s, c, p) => { s.once.scam = 1; const d = round(s.salary * 2.5, 1000);
+      if (p.ok) { s.scamSpotted = true; happy(s, 5); return [["You spotted the scam", "Money safe. Friends warned.", "up"]]; }
+      s.sav -= d; happy(s, -6); return [["You trusted the wrong one", -d], ["Lesson", "Guaranteed high returns are a red flag", "neu"]]; } },
+  lend: { type: "choice", mood: "bad", w: 1, when: (s) => !s.once.lend, title: () => "A friend needs a loan", text: (s) => `An old friend asks ${s.name} to lend a month's salary. "I'll pay you back next month."`,
+    choices: [["lend", "Lend it", "Friendship first"], ["refuse", "Say no politely", "Protect your savings"]],
+    apply: (s, c, p) => { s.once.lend = 1; if (c !== "lend") { happy(s, -2); return [["Decision", "Said no. It was awkward.", "neu"]]; } const d = s.salary; s.sav -= d;
+      if (p.back) { s.sav += d; happy(s, 4); return [["Lent", -d], ["Repaid in full!", d]]; } happy(s, -4); return [["Lent", -d], ["Never repaid", "Friend stopped replying", "down"]]; } },
+
+  // ---- Spending ----
+  parents: { type: "spend", mood: "bad", w: 2, title: () => "Parents need help", text: (s) => `${s.name}'s father is hospitalised. The family chips in.`,
+    apply: (s) => { const d = round(s.salary * 1.5, 500); s.sav -= d; happy(s, -2); return [["Medical bills", -d]]; } },
+  holiday: { type: "spend", mood: "neutral", w: 2, title: () => "Family holiday", text: () => `A week in Japan. Worth every sen.`,
+    apply: (s) => { const d = round(s.salary * 1.2, 500); s.sav -= d; s.holidays++; happy(s, 8); return [["Holiday", -d]]; } },
+  repair: { type: "spend", mood: "bad", w: 2, title: () => "Everything breaks at once", text: () => `The aircon, the fridge and the washing machine, all in one month.`,
+    apply: (s) => { const d = round(s.salary * 0.6, 100); s.sav -= d; return [["Repairs", -d]]; } },
+  inflation: { type: "spend", mood: "bad", w: 2, title: () => "Everything costs more", text: () => `Groceries, petrol, school fees. Prices jump this year.`,
+    apply: (s) => { const d = round(s.living * 0.05, 50); s.living += d; return [["Living costs", `+${rm(d)}/mo`, "down"]]; } },
+  festive: { type: "spend", mood: "neutral", w: 2, title: () => "Festive season", text: () => `Open house, new clothes, duit raya and ang pow for everyone.`,
+    apply: (s) => { const d = round(s.salary * 0.7, 100); s.sav -= d; happy(s, 4); return [["Festive spending", -d]]; } },
+  gadget: { type: "choice", mood: "neutral", w: 2, title: () => "New phone launch", text: (s) => `The latest phone is out. ${s.name}'s current one still works fine.`,
+    choices: [["buy", "Upgrade", "Instalment plan, a month's salary"], ["keep", "Keep the old phone", "It still works"]],
+    apply: (s, c) => { if (c !== "buy") return [["Decision", "Kept the old phone", "neu"]]; const d = round(s.salary, 100); s.sav -= d; happy(s, 3); return [["New phone", -d]]; } },
+  saman: { type: "spend", mood: "bad", w: 1, title: () => "Saman and road tax", text: () => `Three speed traps, one parking ticket and road tax renewal.`,
+    apply: (s) => { const d = round(s.salary * 0.25, 50); s.sav -= d; return [["Fines and renewal", -d]]; } },
+
+  // ---- Family ----
+  wedding: { type: "family", mood: "neutral", w: 4, when: (s) => !s.married && ageOf(s) <= 42, title: () => "Wedding bells", text: (s) => `${s.name} gets married! Two families, one big celebration.`,
+    apply: (s) => { s.married = true; const d = round(s.salary * 5, 1000), m = round(s.salary * 0.15, 50); s.sav -= d; s.living += m; happy(s, 15);
+      return [["Wedding and dowry", -d], ["Bigger home, groceries, two families", `+${rm(m)}/mo`, "down"]]; } },
+  baby: { type: "family", mood: "neutral", w: 4, when: (s) => s.married && s.kids < 2 && ageOf(s) <= 45, title: () => "A baby arrives", text: (s) => `Welcome to the world, little one. ${s.name}'s family grows.`,
+    apply: (s) => { s.kids++; const d = round(s.salary * 1.2, 500), m = bump(s, 0.18); s.kidsCost += m; s.sav -= d; happy(s, 14);
+      return [["Delivery and baby gear", -d], ["Nursery, milk, diapers, clinic", `+${rm(m)}/mo`, "down"]]; } },
+  school: { type: "family", mood: "bad", w: 2, when: (s) => s.kids > 0, title: () => "School fees and tuition", text: () => `Tuition, books, uniforms and school trips for the kids.`,
+    apply: (s) => { const d = round(s.salary * 0.8, 500) * s.kids; s.sav -= d; return [["Education", -d]]; } },
+  uni: { type: "family", mood: "bad", w: 4, when: (s) => s.kids > s.uni && s.year >= 18, title: () => "University offer letter", text: (s) => `${s.name}'s child gets into university. So proud, and so expensive.`,
+    apply: (s) => { s.uni++; const d = round(s.salary * 5, 1000); s.sav -= d; happy(s, 8); return [["Fees and living costs", -d]]; } },
+  parentsIn: { type: "family", mood: "bad", w: 1, when: (s) => !s.once.pin && s.year >= 6, title: () => "Parents move in", text: (s) => `${s.name}'s parents are getting older and move in with the family.`,
+    apply: (s) => { s.once.pin = 1; const m = round(s.living * 0.1, 50); s.living += m; happy(s, 4); return [["Living costs", `+${rm(m)}/mo`, "down"]]; } },
+  pet: { type: "family", mood: "neutral", w: 1, when: (s) => !s.once.pet, title: () => "A new cat", text: (s) => `${s.name} adopts a cat from the shelter. Vet bills included.`,
+    apply: (s) => { s.once.pet = 1; const d = 800, m = 150; s.sav -= d; s.living += m; happy(s, 6); return [["Adoption and vet", -d], ["Food and litter", `+${rm(m)}/mo`, "down"]]; } },
+
+  // ---- Home ----
+  house: { type: "home", mood: "neutral", w: 2, when: (s) => !s.house && !s.once.house && ageOf(s) <= 50, title: () => "Your first home?", text: (s) => `A new condo near ${s.name}'s workplace: ${rm(housePrice(s))}. Buy now or keep renting?`,
+    choices: [["buy", "Buy the home", "10% down payment plus fees, monthly loan"], ["rent", "Keep renting", "Stay flexible, keep the cash"]],
+    apply: (s, c) => { if (c !== "buy") { s.once.house = 1; return [["Decision", "Kept renting", "neu"]]; }
+      const price = housePrice(s), dp = round(price * 0.13, 1000); s.house = true; s.everHouse = true; s.housePrice = price; s.houseValue = price; s.houseDebt = price * 0.9; s.houseYear = s.year;
+      s.loan = round(price * 0.9 * 0.0052, 10); s.sav -= dp; happy(s, 10);
+      return [["Down payment and fees", -dp], ["Home loan", `${rm(s.loan)}/mo (no more rent)`, "neu"]]; } },
+  houseBoom: { type: "home", mood: "good", w: 3, when: (s) => s.house && s.year - s.houseYear >= 4, title: () => "Property prices are up", text: (s) => `A buyer offers ${rm(s.houseValue * 1.05)} for ${s.name}'s home. Sell for a profit, or hold on?`,
+    choices: [["sell", "Sell and rent again", "Cash out the profit"], ["hold", "Hold on", "Prices may keep rising"]],
+    apply: (s, c) => { if (c !== "sell") { s.houseYear = s.year; return [["Decision", "Kept the home", "neu"]]; }
+      const price = round(s.houseValue * 1.05, 1000), fees = round(price * 0.03, 100), cash = price - fees - s.houseDebt;
+      s.sav += cash; s.sold += cash; s.house = false; s.loan = 0; s.houseDebt = 0; s.houseValue = 0; s.rent = round(price * 0.0035, 50); s.once.house = 1; happy(s, 5);
+      return [["Sale price", price], ["Agent and legal fees", -fees], ["Loan paid off", -Math.round(price - fees - cash)], ["Cash in your pocket", Math.round(cash), "tot"], ["Rent from now", `${rm(s.rent)}/mo`, "down"]]; } },
+  houseFix: { type: "home", mood: "bad", w: 1, when: (s) => s.house, title: () => "Roof leak and termites", text: () => `Owning a home means paying for every repair yourself.`,
+    apply: (s) => { const d = round(s.salary * 1.2, 500); s.sav -= d; return [["Home repairs", -d]]; } },
+  rentUp: { type: "home", mood: "bad", w: 3, when: (s) => !s.house && s.year >= 2, title: () => "Rent goes up", text: (s) => `The landlord raises ${s.name}'s rent. Moving would cost even more.`,
+    apply: (s) => { const d = round(s.rent * 0.15, 50); s.rent += d; return [["Rent", `+${rm(d)}/mo`, "down"]]; } },
+  landlord: { type: "home", mood: "bad", w: 1, when: (s) => !s.house && s.year >= 3, title: () => "Landlord is selling", text: (s) => `${s.name} has two months to move out. The new place costs more.`,
+    apply: (s) => { const mv = round(s.rent * 3, 100), d = round(s.rent * 0.1, 50); s.sav -= mv; s.rent += d; happy(s, -4); return [["Deposit and movers", -mv], ["New rent", `+${rm(d)}/mo`, "down"]]; } },
+
+  // ---- Car ----
+  car: { type: "choice", mood: "neutral", w: 2, when: (s) => s.car === "old" && !s.carKept, title: () => "Upgrade the car?", text: (s) => `${s.name}'s old car is tired. A new one is tempting.`,
+    choices: [["buy", "Buy a new car", "Down payment, then 7 years of loan"], ["keep", "Keep the old one", "Save the money for now"]],
+    apply: (s, c) => { if (c !== "buy") { s.carKept = true; return [["Decision", "Kept the old car. Fingers crossed.", "neu"]]; } return buyCar(s); } },
+  carBreak: { type: "bad", mood: "bad", w: 4, when: (s) => s.car === "old" && s.carKept, title: () => "The old car breaks down", text: (s) => `Gearbox gone on the highway. The workshop quote is huge.`,
+    choices: [["fix", "Repair it", "Big bill, keep the old car"], ["buy", "Buy a new car now", "Down payment plus loan"]],
+    apply: (s, c) => { if (c === "buy") { const tow = 400; s.sav -= tow; return [["Towing", -tow], ...buyCar(s)]; }
+      const d = round(s.salary * 1.5, 500); s.sav -= d; happy(s, -4); return [["Gearbox and towing", -d]]; } },
+
+  quiet: { type: "quiet", mood: "neutral", w: 1, title: () => "A steady year", text: (s) => `Nothing dramatic. ${s.name} works, saves and enjoys life.`,
+    apply: (s) => { happy(s, 1); return [["Life", "Business as usual", "neu"]]; } }
+};
+// Higher earners tend to use private care, so critical illness costs scale partly with income.
+function bigCost(s, p) {
+  const b = BIG[p], f = (0.55 + s.salary / 12000) * D_(s).big;
+  const cost = round(b.cost * f, 1000), ong = round(b.ongoing * f, 50), care = round(b.care * f, 50);
+  const lost = (s.salary + s.side) * b.off, careTot = care * b.off;
+  return { b, cost, ong, care, lost, careTot, total: cost + lost + careTot };
+}
+function housePrice(s) { return round((s.salary + s.side) * 12 * 5, 10000); }
+function buyCar(s) {
+  const dp = round(s.salary * 2.5, 500), m = bump(s, 0.11); s.car = "new"; s.carLoan = m; s.carYears = 7; s.sav -= dp; happy(s, 5);
+  return [["Down payment", -dp], ["Car loan, 7 years", `${rm(m)}/mo`, "down"]];
+}
+function buy(s) {
+  const t = planTerms(s); s.insured = true; s.premium = t.premium; s.cover = t.cover; s.boughtAge = ageOf(s); happy(s, 3);
+  return [["Premium", `−${rm(t.premium)}/year`, "down"], ["Protected", `${rm(t.cover)} lump sum + 70% salary`, "up"]];
+}
+// Random parts of a card are decided when it is drawn, so the "what if" replay sees the same outcome.
+function params(id) {
+  if (id === "big") return Math.floor(Math.random() * BIG.length);
+  if (id === "small") return Math.floor(Math.random() * SMALL.length);
+  if (id === "sidebiz") return { win: Math.random() < 0.45 };
+  if (id === "lend") return { back: Math.random() < 0.35 };
+  // defaults for the mini-game cards (used when nobody is playing, e.g. simulations)
+  if (id === "promo") return { tier: pick(["win", "near", "miss"]) };
+  if (id === "bonus") return { score: 4 + Math.floor(Math.random() * 10) };
+  if (id === "scam") return { ok: Math.random() < 0.6 };
+  return null;
+}
+
+// Fixed years: two protection offers, one mid-life critical illness, and some small illnesses.
+function makeSchedule(s = {}) {
+  const sch = new Array(YEARS).fill(null);
+  sch[1] = "offer1"; sch[8] = "offer2";
+  const bigY = 12 + Math.floor(Math.random() * 8); sch[bigY] = "big";
+  let n = 0;
+  while (n < D_(s).smalls) { const y = 3 + Math.floor(Math.random() * 25); if (!sch[y] && Math.abs(y - bigY) > 2) { sch[y] = "small"; n++; } }
+  return sch;
+}
+function scheduled(s, sch) {
+  if (s.off >= 12) return "recover";
+  const id = sch[s.year];
+  if (id === "offer2" && s.insured) return null;
+  return id;
+}
+// Three different cards from the eligible pool, weighted by difficulty.
+function drawThree(s, recent) {
+  const k = D_(s).neg;
+  let pool = Object.entries(CARDS).filter(([id, c]) => c.w && !recent.includes(id) && (!c.when || c.when(s)))
+    .map(([id, c]) => [id, c.w * (c.mood === "bad" ? k : c.mood === "good" ? 1 / k : 1)]);
+  const out = [];
+  while (out.length < 3 && pool.length) {
+    let r = Math.random() * pool.reduce((a, [, w]) => a + w, 0), i = 0;
+    for (; i < pool.length; i++) { if ((r -= pool[i][1]) <= 0) break; }
+    i = Math.min(i, pool.length - 1);
+    out.push(pool[i][0]); pool.splice(i, 1);
+  }
+  while (out.length < 3) out.push("quiet");
+  return out;
+}
+
+// Close the year: money in, money out, debts serviced, then pay rises and cost of living.
+function closeYear(s) {
+  const D = D_(s), offNow = Math.min(12, s.off); s.off -= offNow;
+  const work = 12 - offNow;
+  const replace = s.insured ? round(s.salary * 0.7) * offNow : 0;
+  const inc = (s.salary + s.side) * work + replace;
+  let out = (s.living + housing(s) + s.carLoan + s.kidsCost + s.ongoing) * 12 + s.care * offNow + (s.insured ? s.premium : 0);
+  if (s.insured) s.premPaid += s.premium;
+  s.claims += replace;
+  // Credit card: ~18% a year interest, and a minimum repayment of 5% of the balance every month is added to spending.
+  if (s.card > 0) {
+    const pay = Math.min(cardPay(s) * 12, round(s.card * 1.18)), i = round(s.card * 0.18);
+    s.card += i - pay; s.interest += i; out += pay;
+  }
+  let net = inc - out;
+  if (net > 0) { const a = Math.min(s.card, net); s.card -= a; net -= a; const b = Math.min(s.fam, net * 0.5); s.fam -= b; net -= b; }
+  s.sav += net;
+  if (s.off === 0) s.care = 0;
+  if (s.carYears > 0 && --s.carYears === 0) s.carLoan = 0;
+  if (s.house) { s.houseValue = round(s.houseValue * 1.04, 100); s.houseDebt = Math.max(0, s.houseDebt - s.housePrice * 0.9 / 35); }
+  if (work === 12) s.salary = round(s.salary * (1 + D.grow), 10);
+  s.living = round(s.living * (1 + D.infl), 10); s.kidsCost = round(s.kidsCost * (1 + D.infl), 10);
+  // Investments move with this year's market.
+  const m = s.market[Math.min(s.year, YEARS - 1)], invBefore = invTotal(s);
+  for (const a in s.inv) s.inv[a] = Math.max(0, round(s.inv[a] * (1 + m[a]), 10));
+  s.lastMarket = m;
+  const invChange = invTotal(s) - invBefore;
+  // Money and peace of mind: debt and a thin buffer wear people down; a real cushion and protection help them sleep.
+  const h0 = s.happy, monthOut = cashOut(s), why = [];
+  if (s.card + s.fam > 0) { s.happy -= 4; why.push("debt worries"); }
+  else if (s.sav < monthOut * 3) { s.happy -= 2; why.push("living paycheck to paycheck"); }
+  else if (s.sav > monthOut * 12) { s.happy += 2; why.push("a healthy cushion"); }
+  if (offNow > 0 && !s.insured) { s.happy -= 4; why.push("no income while sick"); }
+  if (s.insured) { s.happy += 1; why.push("peace of mind"); }
+  if (invBefore > 0 && invChange < -invBefore * 0.2) { s.happy -= 3; why.unshift("investments crashed"); }
+  else if (invBefore > 0 && invChange > invBefore * 0.3) { s.happy += 2; why.unshift("investments booming"); }
+  // Families spending more than they earn tighten their belts: living costs trimmed up to 10%, at a cost to happiness.
+  const gap = cashOut(s) - (s.salary + s.side);
+  if (s.off === 0 && gap > 0) { const cut = Math.min(round(s.living * 0.1, 10), round(gap, 10)); s.living -= cut; s.happy -= 2; why.unshift(`cutting back ${rm(cut)}/mo`); }
+  // moods fade a little each year, back toward an everyday 60
+  s.happy = clamp(Math.round(s.happy + (60 - s.happy) * 0.08), 0, 100);
+  return { inc, out, net: inc - out, hDelta: s.happy - h0, why, invChange, invBefore };
+}
+// Cover a shortfall: charity (once), family and friends (twice; the second ask may be refused), or credit card.
+function fund(s, how) {
+  const short = -s.sav; if (short <= 0) return;
+  if (how === "sell") { s.sav += sellInv(s, short); happy(s, -2); return; }
+  s.sav = 0;
+  if (how === "charity") { s.charity = true; s.charityGot += short; happy(s, -15); }
+  else if (how === "family") { s.famUses++; s.fam += short; s.famBorrowed += short; happy(s, -8); }
+  else { s.card += short; s.cardUses++; happy(s, -4); }
+}
+// Card debt beyond 10 months of salary can't be serviced any more: the game ends in bankruptcy.
+const bankLimit = (s) => round(s.salary * 10, 1000);
+const isBankrupt = (s) => s.card > bankLimit(s);
+// Chance relatives say no on the second ask: higher when the amount is large.
+const refuseChance = (s, short) => s.famUses === 0 ? 0 : clamp(0.45 + short / (s.salary * 20), 0.45, 0.85);
+
+// =====================================================================
+// 3D world (Three.js)
+// =====================================================================
+const canvas = $("scene");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#BFE6F2");
+scene.fog = new THREE.Fog("#BFE6F2", 30, 75);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
+scene.add(new THREE.HemisphereLight("#FFFFFF", "#8DB38A", 0.75));
+const sun = new THREE.DirectionalLight("#FFF4DE", 0.85);
+sun.position.set(10, 20, 8); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
+Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 16, bottom: -16, near: 1, far: 60 });
+scene.add(sun, sun.target);
+
+const mat = (c, o = {}) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.85, metalness: 0 }, o));
+function mesh(geo, m, x = 0, y = 0, z = 0, shadow = true) { const me = new THREE.Mesh(geo, m); me.position.set(x, y, z); me.castShadow = shadow; me.receiveShadow = true; return me; }
+
+const pathX = (i) => Math.sin(i * 0.42) * 4.5;
+const tilePos = (i) => new THREE.Vector3(pathX(i), 0, -i * 2.3);
+
+const ground = mesh(new THREE.PlaneGeometry(120, 160), mat("#9CCF86"), 0, 0, -30, false);
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+
+const tiles = [];
+const tileGeo = new THREE.BoxGeometry(1.9, 0.22, 1.9);
+for (let i = 0; i <= YEARS; i++) {
+  const p = tilePos(i), big = i % 5 === 0;
+  const t = mesh(tileGeo, mat(big ? "#FFFFFF" : "#F3EEE2"), p.x, 0.11, p.z);
+  if (big) t.scale.set(1.2, 1, 1.2);
+  t.rotation.y = Math.atan2(pathX(i + 1) - pathX(i), -2.3) * 0.3;
+  scene.add(t); tiles.push(t);
+}
+for (let i = 0; i < YEARS; i++) {
+  const a = tilePos(i), b = tilePos(i + 1);
+  scene.add(mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.08, 10), mat("#E6DECB"), (a.x + b.x) / 2, 0.05, (a.z + b.z) / 2));
+}
+function labelSprite(text, bg = "#13211F", fg = "#FFFFFF", w = 256) {
+  const c = document.createElement("canvas"); c.width = w; c.height = 96; const x = c.getContext("2d");
+  x.fillStyle = bg; const r = 40; x.beginPath(); x.moveTo(r, 8); x.arcTo(w - 8, 8, w - 8, 88, r); x.arcTo(w - 8, 88, 8, 88, r); x.arcTo(8, 88, 8, 8, r); x.arcTo(8, 8, w - 8, 8, r); x.fill();
+  x.fillStyle = fg; x.font = "800 44px Figtree, system-ui, sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText(text, w / 2, 50);
+  const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  sp.scale.set(w / 96 * 0.75, 0.75, 1); return sp;
+}
+const milestoneSprites = [];
+function placeMilestones(age0) {
+  milestoneSprites.forEach(s => scene.remove(s)); milestoneSprites.length = 0;
+  for (let i = 0; i <= YEARS; i += 5) {
+    const p = tilePos(i), sp = labelSprite(i === YEARS ? `Age ${age0 + i} · Finish` : `Age ${age0 + i}`, i === YEARS ? "#D99A1E" : "#13211F", "#FFFFFF", i === YEARS ? 400 : 256);
+    sp.position.set(p.x + (pathX(i) > 0 ? -2.6 : 2.6), 1.6, p.z); scene.add(sp); milestoneSprites.push(sp);
+  }
+}
+(function () {
+  const p = tilePos(YEARS), m = mat("#D99A1E", { metalness: .3, roughness: .4 });
+  scene.add(mesh(new THREE.BoxGeometry(0.3, 3, 0.3), m, p.x - 1.4, 1.5, p.z - 0.6), mesh(new THREE.BoxGeometry(0.3, 3, 0.3), m, p.x + 1.4, 1.5, p.z - 0.6), mesh(new THREE.BoxGeometry(3.1, 0.35, 0.35), m, p.x, 3, p.z - 0.6));
+})();
+
+const sceneryRand = (() => { let s = 7; return () => (s = (s * 16807) % 2147483647) / 2147483647; })();
+function tree(x, z, s = 1) {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.CylinderGeometry(0.12 * s, 0.16 * s, 0.8 * s, 6), mat("#7A5A3A"), 0, 0.4 * s, 0));
+  g.add(mesh(new THREE.ConeGeometry(0.75 * s, 1.6 * s, 7), mat(sceneryRand() > .5 ? "#3E8E5E" : "#4FA06A"), 0, 1.5 * s, 0));
+  g.position.set(x, 0, z); scene.add(g);
+}
+function palm(x, z) {
+  const g = new THREE.Group();
+  const trunk = mesh(new THREE.CylinderGeometry(0.1, 0.16, 2.6, 6), mat("#8A6A45"), 0, 1.3, 0); trunk.rotation.z = 0.12; g.add(trunk);
+  for (let k = 0; k < 6; k++) { const leaf = mesh(new THREE.BoxGeometry(1.5, 0.05, 0.35), mat("#3E8E5E"), 0, 2.6, 0); leaf.rotation.y = k * Math.PI / 3; leaf.rotation.z = -0.35; leaf.translateX(0.6); g.add(leaf); }
+  g.position.set(x, 0, z); scene.add(g);
+}
+const HOUSE_COLS = ["#9FD3C7", "#F3C77B", "#F2A7A0", "#A9C6E8", "#E9DFC9"];
+function shophouse(x, z, rot) {
+  const g = new THREE.Group(), h = 1.6 + sceneryRand() * 0.8;
+  g.add(mesh(new THREE.BoxGeometry(1.6, h, 1.4), mat(HOUSE_COLS[Math.floor(sceneryRand() * 5)]), 0, h / 2, 0));
+  const roof = mesh(new THREE.ConeGeometry(1.25, 0.7, 4), mat("#B5523B"), 0, h + 0.35, 0); roof.rotation.y = Math.PI / 4; g.add(roof);
+  g.position.set(x, 0, z); g.rotation.y = rot; scene.add(g);
+}
+for (let k = 0; k < 120; k++) {
+  const z = 6 - sceneryRand() * 82, side = sceneryRand() > .5 ? 1 : -1, i = -z / 2.3;
+  const x = pathX(i) + side * (3 + sceneryRand() * 16), r = sceneryRand();
+  if (r < .55) tree(x, z, 0.8 + sceneryRand() * .6); else if (r < .8) palm(x, z); else shophouse(x, z, sceneryRand() * Math.PI);
+}
+for (let k = 0; k < 8; k++) scene.add(mesh(new THREE.SphereGeometry(8 + k % 3 * 3, 12, 8), mat("#88BC7A"), (k % 2 ? 1 : -1) * (26 + k * 2), -3, -10 - k * 9, false));
+
+function person(shirt, scale = 1) {
+  const g = new THREE.Group(), skin = mat("#E8B98F");
+  g.add(mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.75, 10), mat(shirt), 0, 0.85, 0));
+  g.add(mesh(new THREE.SphereGeometry(0.26, 16, 12), skin, 0, 1.45, 0));
+  g.add(mesh(new THREE.SphereGeometry(0.27, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat("#2B2B2B"), 0, 1.5, 0));
+  const legL = mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.5, 6), mat("#22313A"), -0.12, 0.25, 0), legR = legL.clone(); legR.position.x = 0.12; g.add(legL, legR);
+  const armL = mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.55, 6), skin, -0.38, 0.9, 0), armR = armL.clone(); armR.position.x = 0.38; armL.rotation.z = 0.25; armR.rotation.z = -0.25; g.add(armL, armR);
+  g.scale.setScalar(scale); g.userData = { legL, legR };
+  return g;
+}
+const hero = person("#0E6B5C"); scene.add(hero);
+const shield = new THREE.Mesh(new THREE.SphereGeometry(1.05, 24, 16), new THREE.MeshStandardMaterial({ color: "#F2C14E", transparent: true, opacity: 0.18, emissive: "#F2C14E", emissiveIntensity: 0.3, depthWrite: false }));
+shield.position.y = 0.85; shield.visible = false; hero.add(shield);
+const followers = [], trail = [];
+let heroTile = 0, anim = null, bed = null, crossSprite = null, houseProp = null, carProp = null;
+const props = [];
+
+function placeHero(i) { heroTile = i; const p = tilePos(i).setY(0.22); hero.position.copy(p); trail.length = 0; for (let k = 0; k < 40; k++) trail.push(p.clone()); }
+function hopTo(i, dur = 0.5) {
+  return new Promise(res => {
+    const from = hero.position.clone(), to = tilePos(i).setY(0.22);
+    hero.rotation.y = Math.atan2(to.x - from.x, to.z - from.z);
+    anim = { t: 0, dur: reduced ? 0.01 : dur, from, to, res, i };
+  });
+}
+async function hopRange(a, b, dur) { for (let i = a + 1; i <= b; i++) await hopTo(i, dur); }
+function setLying(on) {
+  if (on) {
+    const p = tilePos(heroTile);
+    bed = new THREE.Group();
+    bed.add(mesh(new THREE.BoxGeometry(0.9, 0.3, 1.9), mat("#FFFFFF"), 0, 0.4, 0), mesh(new THREE.BoxGeometry(0.9, 0.15, 0.4), mat("#DDE8EA"), 0, 0.62, -0.7));
+    bed.position.set(p.x, 0.22, p.z); scene.add(bed);
+    hero.rotation.set(-Math.PI / 2, 0, 0); hero.position.set(p.x, 0.95, p.z + 0.35);
+    crossSprite = labelSprite("Hospital", "#C2412D", "#FFFFFF", 300); crossSprite.position.set(p.x, 2.6, p.z); scene.add(crossSprite);
+  } else {
+    if (bed) scene.remove(bed); if (crossSprite) scene.remove(crossSprite); bed = crossSprite = null;
+    hero.rotation.set(0, Math.PI, 0); hero.position.copy(tilePos(heroTile).setY(0.22));
+  }
+}
+function addFollower(kind) {
+  const f = kind === "partner" ? person("#D6618A") : person(followers.length % 2 ? "#3B6FD8" : "#F2A65A", 0.6);
+  f.position.copy(hero.position).add(new THREE.Vector3(1, 0, 1)); scene.add(f); followers.push(f); burst("#F7A1B5", 20, hero.position);
+}
+function addProp(kind) {
+  const p = tilePos(heroTile), side = pathX(heroTile) > 0 ? -1 : 1, g = new THREE.Group();
+  if (kind === "house") {
+    g.add(mesh(new THREE.BoxGeometry(2, 1.6, 1.8), mat("#FFF7EA"), 0, 0.8, 0));
+    const roof = mesh(new THREE.ConeGeometry(1.6, 1, 4), mat("#7A5CC2"), 0, 2.1, 0); roof.rotation.y = Math.PI / 4; g.add(roof);
+    g.add(mesh(new THREE.BoxGeometry(0.4, 0.7, 0.05), mat("#7A5A3A"), 0, 0.35, 0.92));
+    g.position.set(p.x + side * 3.4, 0, p.z); houseProp = g;
+  } else {
+    if (carProp) scene.remove(carProp);
+    g.add(mesh(new THREE.BoxGeometry(1.4, 0.4, 0.7), mat("#3B6FD8"), 0, 0.35, 0), mesh(new THREE.BoxGeometry(0.8, 0.3, 0.65), mat("#AFC8F2"), -0.1, 0.7, 0));
+    [[-.45, .35], [.45, .35], [-.45, -.35], [.45, -.35]].forEach(([x, z]) => { const w = mesh(new THREE.CylinderGeometry(.16, .16, .1, 10), mat("#22313A"), x, .16, z); w.rotation.x = Math.PI / 2; g.add(w); });
+    g.position.set(p.x + side * 2.4, 0, p.z + 0.8); carProp = g;
+  }
+  g.scale.setScalar(0.01); scene.add(g); props.push({ g, t: 0 });
+}
+function removeHouse() { if (houseProp) { burst(["#F2C14E", "#E0A526"], 40, houseProp.position, true); scene.remove(houseProp); houseProp = null; } }
+const particles = [];
+function burst(color, n, at, coin) {
+  const geo = coin ? new THREE.CylinderGeometry(0.12, 0.12, 0.04, 10) : new THREE.BoxGeometry(0.12, 0.12, 0.02);
+  for (let k = 0; k < n; k++) {
+    const m = mesh(geo, mat(Array.isArray(color) ? pick(color) : color, coin ? { metalness: .5, roughness: .3, emissive: "#6B4A00", emissiveIntensity: .3 } : {}), at.x, at.y + 1, at.z, false);
+    m.userData.v = new THREE.Vector3((Math.random() - .5) * 4, 4 + Math.random() * 4, (Math.random() - .5) * 4);
+    m.userData.life = 1.8; scene.add(m); particles.push(m);
+  }
+}
+function colorTile(i, type) { if (tiles[i]) tiles[i].material.color.set(TYPES[type].color); }
+
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.fov = w < h ? 55 : 42; camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize); resize();
+
+const clock = new THREE.Clock();
+let camOrbit = 0, mode = "intro";
+function tick() {
+  const dt = Math.min(0.05, clock.getDelta()), t = clock.elapsedTime;
+  if (anim) {
+    anim.t += dt; const k = Math.min(1, anim.t / anim.dur);
+    hero.position.lerpVectors(anim.from, anim.to, k); hero.position.y = anim.to.y + Math.sin(Math.PI * k) * 0.9;
+    const u = hero.userData; u.legL.rotation.x = Math.sin(k * 10) * .6; u.legR.rotation.x = -Math.sin(k * 10) * .6;
+    if (k >= 1) { heroTile = anim.i; const r = anim.res; anim = null; r(); }
+  } else if (!bed) hero.position.y = 0.22 + Math.abs(Math.sin(t * 2)) * 0.04;
+  trail.push(hero.position.clone()); if (trail.length > 40) trail.shift();
+  followers.forEach((f, k) => { const target = trail[Math.max(0, trail.length - 1 - (k + 1) * 10)].clone().add(new THREE.Vector3(0.6 * (k % 2 ? -1 : 1), 0, 0.8)); target.y = 0.22; f.position.lerp(target, 0.12); f.rotation.y = hero.rotation.y; });
+  shield.material.opacity = 0.14 + Math.sin(t * 3) * 0.05;
+  props.forEach(p => { if (p.t < 1) { p.t = Math.min(1, p.t + dt * 2); p.g.scale.setScalar(1 - Math.pow(1 - p.t, 3)); } });
+  for (let k = particles.length - 1; k >= 0; k--) { const m = particles[k]; m.userData.v.y -= 9 * dt; m.position.addScaledVector(m.userData.v, dt); m.rotation.x += dt * 6; m.userData.life -= dt; if (m.userData.life <= 0) { scene.remove(m); particles.splice(k, 1); } }
+  const focus = hero.position.clone();
+  let want;
+  if (mode === "play") want = focus.clone().add(new THREE.Vector3(3.5, 7.5, 10));
+  else { camOrbit += dt * 0.15; want = focus.clone().add(new THREE.Vector3(Math.sin(camOrbit) * 11, 7, Math.cos(camOrbit) * 11)); }
+  camera.position.lerp(want, 0.06);
+  camera.lookAt(focus.x, focus.y + 0.6, focus.z - (mode === "play" ? 3 : 0));
+  sun.position.set(focus.x + 10, 20, focus.z + 8); sun.target.position.copy(focus);
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+placeHero(0); hero.rotation.y = Math.PI;
+requestAnimationFrame(tick);
+
+// =====================================================================
+// Game flow and UI
+// =====================================================================
+let S = null, SCH = null, history = [], recent = [], busy = false, runId = 0;
+const sleep = (ms) => new Promise(r => setTimeout(r, reduced ? 0 : ms));
+const ICONS = {
+  up: '<svg viewBox="0 0 40 40" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 28l9-9 6 6 9-11"/><path d="M24 14h8v8"/></svg>',
+  down: '<svg viewBox="0 0 40 40" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12l9 9 6-6 9 11"/><path d="M24 26h8v-8"/></svg>',
+  coin: '<svg viewBox="0 0 40 40" fill="none" stroke="#fff" stroke-width="3"><circle cx="20" cy="20" r="12"/><path d="M15 17h10M15 23h10" stroke-linecap="round"/></svg>',
+  heart: '<svg viewBox="0 0 40 40"><path fill="#fff" d="M20 33S6 24.5 6 15.5A7.5 7.5 0 0 1 20 11a7.5 7.5 0 0 1 14 4.5C34 24.5 20 33 20 33z"/></svg>',
+  home: '<svg viewBox="0 0 40 40" fill="none" stroke="#fff" stroke-width="3.2" stroke-linejoin="round"><path d="M6 19L20 7l14 12"/><path d="M10 16v16h20V16"/><path d="M17 32v-8h6v8"/></svg>',
+  fork: '<svg viewBox="0 0 40 40" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 34V22M20 22L10 10M20 22l10-12M10 10v6M10 10h6M30 10v6M30 10h-6"/></svg>',
+  shield: '<svg viewBox="0 0 40 40"><path fill="#fff" d="M20 5l12 5v9c0 8-5.5 13.5-12 16-6.5-2.5-12-8-12-16v-9z"/><path d="M14 20l4 4 8-8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  cross: '<svg viewBox="0 0 40 40"><rect x="6" y="6" width="28" height="28" rx="8" fill="#fff"/><path d="M20 12v16M12 20h16" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>',
+  bed: '<svg viewBox="0 0 40 40" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M5 30V12M5 24h30v6M35 24v-4a4 4 0 0 0-4-4H18v8"/><circle cx="11" cy="19" r="3"/></svg>',
+  dot: '<svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="9" fill="#fff"/></svg>'
+};
+
+function initStart() {
+  $("in-occ").innerHTML = OCCUPATIONS.map(([n], i) => `<option value="${i}">${n}</option>`).join("");
+  $("in-occ").value = 6; $("in-inc").value = OCCUPATIONS[6][1];
+  $("in-occ").onchange = () => { $("in-inc").value = OCCUPATIONS[$("in-occ").value][1]; };
+  $("in-age").oninput = () => { $("end-age").textContent = clamp(+$("in-age").value || 28, 20, 45) + YEARS; };
+  let goal = "home";
+  const renderGoals = () => { $("goals").innerHTML = Object.entries(GOALS).map(([k, g]) => `<button type="button" data-g="${k}" aria-pressed="${k === goal}"><b>${g.name}</b><span>${g.desc}</span></button>`).join("");
+    $("goals").querySelectorAll("button").forEach(b => b.onclick = () => { goal = b.dataset.g; renderGoals(); }); };
+  renderGoals();
+  $("start-form").onsubmit = (e) => {
+    e.preventDefault();
+    begin({ name: $("in-name").value.trim() || "Aiman", age: clamp(Math.round(+$("in-age").value || 28), 20, 45),
+      occ: OCCUPATIONS[$("in-occ").value][0], income: clamp(Math.round(+$("in-inc").value || 4000), 1500, 100000), goal });
+  };
+}
+function begin(o) {
+  o.market = makeMarket();
+  S = newLife(o); S.start = { ...o }; SCH = makeSchedule(S); history = []; recent = [];
+  followers.forEach(f => scene.remove(f)); followers.length = 0; props.forEach(p => scene.remove(p.g)); props.length = 0; houseProp = carProp = null;
+  tiles.forEach((t, i) => t.material.color.set(i % 5 === 0 ? "#FFFFFF" : "#F3EEE2"));
+  setLying(false); shield.visible = false; placeHero(0); hero.rotation.y = Math.PI; placeMilestones(o.age);
+  $("start").hidden = true; $("end").hidden = true; $("hud").hidden = false; $("bottom").hidden = false;
+  $("years").innerHTML = Array.from({ length: YEARS }, () => "<i></i>").join("");
+  mode = "play"; busy = false; prevSav = null; renderHUD();
+  runLife(++runId);
+}
+// The life plays itself forward: each year deals the next cards as soon as the character has moved.
+async function runLife(id) {
+  await sleep(900);
+  while (id === runId && mode === "play" && S.year < YEARS) { await playYear(); await sleep(450); }
+  if (id === runId && mode === "play") finish();
+}
+
+let prevSav = null;
+function renderHUD() {
+  $("h-name").textContent = S.name; $("h-occ").textContent = S.occ; $("h-age").textContent = ageOf(S);
+  const sav = $("h-sav"), v = S.sav;
+  sav.textContent = krm(v);
+  if (prevSav !== null && v !== prevSav) { sav.classList.remove("flash-up", "flash-down"); void sav.offsetWidth; sav.classList.add(v > prevSav ? "flash-up" : "flash-down"); setTimeout(() => sav.classList.remove("flash-up", "flash-down"), 900); }
+  prevSav = v;
+  $("h-in").textContent = krm(cashIn(S)); $("h-out").textContent = krm(cashOut(S));
+  const md = mood(S.happy);
+  $("h-happy").style.width = S.happy + "%"; $("h-hnum").textContent = `${S.happy} · ${md[0]}`; $("h-hnum").style.color = md[1];
+  const b = [`<button class="badge cf" type="button" id="cf-btn">Cash flow</button>`];
+  b.push(S.insured ? `<span class="badge on">Protected</span>` : `<span class="badge">No protection</span>`);
+  if (S.house) b.push(`<span class="badge on" style="background:#7A5CC2">Home ${krm(S.houseValue)}</span>`);
+  if (S.card > 0) b.push(`<span class="badge bad">Card ${krm(S.card)}${S.card > bankLimit(S) * 0.6 ? " · near bankruptcy" : ""}</span>`);
+  if (S.fam > 0) b.push(`<span class="badge bad">Owes family ${krm(S.fam)}</span>`);
+  if (S.off > 0 || S.lying) b.push(`<span class="badge bad">Off work</span>`);
+  if (invTotal(S) > 0) b.push(`<span class="badge on" style="background:#3B6FD8">Invested ${krm(invTotal(S))}</span>`);
+  b.push(`<span class="badge${S.goalDone != null ? " on" : ""}"${S.goalDone != null ? ' style="background:#D99A1E"' : ""}>Dream: ${GOALS[S.goal].name}${S.goalDone != null ? " ✓" : ""}</span>`);
+  $("h-badges").innerHTML = b.join(""); $("cf-btn").onclick = showCashflow;
+  [...$("years").children].forEach((el, i) => { el.className = i === S.year ? "now" : ""; const h = history.find(x => x.year === i); el.style.background = h ? TYPES[h.claim ? "claim" : h.type].color : ""; });
+}
+function toast(text, sub) { const t = document.createElement("div"); t.className = "toast"; t.innerHTML = esc(text) + (sub ? `<small>${esc(sub)}</small>` : ""); document.body.appendChild(t); setTimeout(() => t.remove(), 2300); }
+
+// ---- Card table ----
+function openTable(html) { $("table").innerHTML = html; $("table").hidden = false; }
+const hideTable = () => { $("table").hidden = true; $("table").innerHTML = ""; };
+function waitClick(sel) {
+  return new Promise(res => {
+    const els = $("table").querySelectorAll(sel);
+    els.forEach(b => b.onclick = () => res(b));
+    setTimeout(() => { if (els[0]) els[0].focus({ preventScroll: true }); }, 500);
+  });
+}
+async function pickFromDeck(kind) {
+  const L = kind === "fate" ? ["A fate card", "Some things in life you don't get to choose."]
+          : kind === "prot" ? ["A protection card", "A decision that could change everything."]
+          : [`Pick a card · Age ${ageOf(S)}`, "Each card is a different turn of life."];
+  const n = kind ? 1 : 3;
+  const minis = Array.from({ length: n }, (_, i) => `<button class="mini ${kind || ""}" type="button" data-i="${i}"><small>${kind === "fate" ? "Fate" : kind === "prot" ? "Protection" : "Life card"}</small><b>${kind === "fate" ? "!" : kind === "prot" ? "◆" : "?"}</b><small>Age ${ageOf(S)}</small></button>`).join("");
+  openTable(`<div class="deckwrap"><p class="deck-title">${L[0]}</p><div class="deck ${n === 1 ? "one" : ""}">${minis}</div><p class="deck-sub">${L[1]}</p>
+    <button class="btn btn-ghost" type="button" id="deck-cf" style="padding:8px 14px;font-size:13px">See my cash flow</button></div>`);
+  $("deck-cf").onclick = showCashflow;
+  const b = await waitClick(".mini");
+  const i = +b.dataset.i;
+  $("table").querySelectorAll(".mini").forEach((m, k) => m.classList.add(k === i ? "chosen" : "gone"));
+  await new Promise(r => setTimeout(r, reduced ? 0 : 380));
+  return i;
+}
+function bigCard(front) {
+  openTable(`<div class="card" id="card"><div class="card-in"><div class="face back"><b>LIFE<small>CARD</small></b></div><div class="face front">${front}</div></div></div>`);
+  const card = $("card"); void card.offsetWidth; requestAnimationFrame(() => card.classList.add("flip"));
+}
+function cardFront(id, p, lines, choices, missed) {
+  const def = CARDS[id], type = TYPES[def.type];
+  let terms = "";
+  if (def.terms) { const t = planTerms(S); terms = `<div class="terms"><div><span>Premium</span><b>${rm(t.premium)} / year</b></div><div><span>Critical illness lump sum</span><b>${rm(t.cover)}</b></div><div><span>While you can't work</span><b>70% of salary</b></div></div>`; }
+  const fx = lines ? `<div class="fx">${lines.map(([l, v, k]) => typeof v === "number"
+      ? `<div class="${k === "tot" ? "tot" : ""}"><span>${l}</span><span class="${v >= 0 ? "up" : "down"}">${srm(v)}</span></div>`
+      : `<div><span>${l}</span><span class="${k || "neu"}">${esc(v)}</span></div>`).join("")}</div>` : "";
+  const mis = missed && missed.length ? `<p class="missed">The other cards were: ${missed.map(m => esc(CARDS[m].title(S, null))).join(" · ")}</p>` : "";
+  const acts = choices
+    ? `<div class="acts">${choices.map(([cid, l, sub]) => `<button class="choice" type="button" data-c="${cid}"><b>${l}</b><span>${esc(sub)}</span></button>`).join("")}</div>`
+    : `<div class="acts"><button class="btn btn-primary" type="button" data-c="ok">Continue</button></div>`;
+  return `<div class="band" style="background:${type.color};color:${type.color}">${ICONS[type.icon]}<div style="color:#fff"><small>${type.label} · Age ${ageOf(S)}</small><h3>${esc(def.title(S, p))}</h3></div></div>
+    <div class="body"><p>${esc(def.text(S, p))}</p>${terms}${fx}${mis}${acts}</div>`;
+}
+async function showFront(html, flip) {
+  if (flip) bigCard(html); else { $("table").querySelector(".front").innerHTML = html; }
+  const b = await waitClick("[data-c]"); return b.dataset.c;
+}
+
+async function playYear() {
+  if (busy) return; busy = true;
+  if (S.year >= YEARS) { busy = false; return finish(); }
+  const sp = scheduled(S, SCH);
+  let id, missed = null;
+  if (sp === "recover") id = "recover";
+  else if (sp) { await pickFromDeck(sp === "big" || sp === "small" ? "fate" : "prot"); id = sp; }
+  else { const three = drawThree(S, recent); const i = await pickFromDeck(null); id = three[i]; missed = three.filter((_, k) => k !== i); }
+  recent = [id, ...recent].slice(0, 3);
+  const def = CARDS[id];
+  let p = params(id), choice = null;
+  // mini-games decide the outcome of some cards
+  if (id === "promo") p = await needleGame();
+  if (id === "bonus") p = await rushGame();
+  if (id === "scam") p = await scamGame();
+  // before a critical illness bill is shown, the player guesses its cost
+  let quiz = null;
+  if (id === "big") quiz = await costQuiz(p);
+  if (def.choices) choice = await showFront(cardFront(id, p, null, def.choices, missed), true);
+  const before = { house: S.house, car: S.car };
+  S.hd = 0;
+  const lines = def.apply(S, choice, p);
+  if (quiz) {
+    const real = S.bigTotal, ratio = quiz / real, close = ratio >= 0.75 && ratio <= 1.25;
+    if (close) { S.quizClose = true; happy(S, 2); }
+    lines.unshift(["Your guess", `${rm(quiz)} (${Math.round(ratio * 100)}% of the real cost)`, close ? "up" : "down"]);
+  }
+  if (S.hd) lines.push(["Happiness", `${S.hd > 0 ? "+" : ""}${S.hd}`, S.hd > 0 ? "up" : "down"]);
+  const type = def.type;
+  const h = { year: S.year, id, p, choice, type, title: def.title(S, p) };
+  history.push(h);
+  // world reactions
+  colorTile(S.year, type);
+  if (id === "wedding") addFollower("partner");
+  if (id === "baby") addFollower("kid");
+  if (!before.house && S.house) addProp("house");
+  if (before.house && !S.house) removeHouse();
+  if (before.car !== "new" && S.car === "new") addProp("car");
+  if (def.type === "offer" && choice === "buy") { shield.visible = true; burst(["#F2C14E", "#FFFFFF"], 24, hero.position); }
+  if (id === "big") { setLying(true); if (S.insured) setTimeout(() => burst(["#F2C14E", "#E0A526"], 45, hero.position, true), 400); }
+  renderHUD();
+  await showFront(cardFront(id, p, lines, null, def.choices ? null : missed), !def.choices);
+  if (id === "big" && S.insured) { h.claim = true; await showFront(claimHTML(), true); }
+  hideTable();
+  // close the year
+  const ageWas = ageOf(S), y = closeYear(S);
+  if (S.sav < 0) { renderHUD(); await coverShortfall(h); }
+  if (isBankrupt(S)) { S.bankrupt = true; S.bankruptAge = ageWas; renderHUD(); await showFront(bankruptHTML(), true); busy = false; finish(); return; }
+  if (S.carYears === 0 && S.car === "new" && S.carLoan === 0 && !S.once.carPaid) { S.once.carPaid = 1; toast("Car loan fully paid!"); }
+  if (INV_YEARS.includes(S.year) && S.sav > 0) { renderHUD(); await investWindow(h); }
+  const dream = checkGoal(S);
+  S.year++;
+  renderHUD();
+  if (dream) { burst(["#F2C14E", "#FFFFFF", "#E86A5A"], 60, hero.position); toast(`Dream achieved: ${GOALS[S.goal].name}!`, "Happiness +12"); await sleep(1800); }
+  toast(`Age ${ageWas}: ${y.net >= 0 ? "saved" : "spent"} ${srm(y.net)}`,
+    `In ${krm(y.inc)} · Out ${krm(y.out)}${y.invBefore > 0 ? ` · Investments ${y.invChange >= 0 ? "+" : "−"}${krm(Math.abs(y.invChange))}` : ""}${y.hDelta ? ` · Happiness ${y.hDelta > 0 ? "+" : ""}${y.hDelta} (${y.why[0]})` : ""}`);
+  if (!(S.lying && S.off >= 12)) {
+    if (S.lying) { S.lying = false; setLying(false); }
+    if (heroTile < S.year) await hopRange(heroTile, S.year, heroTile < S.year - 1 ? 0.28 : 0.5);
+  } else await sleep(900);
+  busy = false; renderHUD();
+}
+// ---- Mini-games ----
+// Promotion challenge: stop the swinging needle inside the gold zone. The zone narrows and the needle speeds up each try.
+function needleGame() {
+  return new Promise(res => {
+    const zone = Math.max(0.09, 0.18 - S.promoTries * 0.03), speed = 1.1 + S.promoTries * 0.18; S.promoTries++;
+    const start = 0.12 + Math.random() * (0.76 - zone);
+    openTable(`<div class="mg" role="dialog" aria-label="Promotion challenge"><p class="eyebrow">Promotion challenge · Age ${ageOf(S)}</p>
+      <h3>Stop the needle in the gold zone</h3><p class="note">Gold wins the promotion. Light gold gets a small raise. Tap STOP or the bar.</p>
+      <div class="needlebar" id="nb"><i class="near" style="left:${(start - 0.08) * 100}%;width:${(zone + 0.16) * 100}%"></i><i class="win" style="left:${start * 100}%;width:${zone * 100}%"></i><b id="nd"></b></div>
+      <button class="btn btn-gold" id="nstop" type="button">STOP</button></div>`);
+    const t0 = performance.now(); let x = 0, stopped = false;
+    const loop = (now) => { if (stopped) return; x = (Math.sin((now - t0) / 1000 * speed * Math.PI - Math.PI / 2) + 1) / 2; $("nd").style.left = x * 100 + "%"; requestAnimationFrame(loop); };
+    requestAnimationFrame(loop);
+    const stop = () => {
+      if (stopped) return; stopped = true;
+      const tier = x >= start && x <= start + zone ? "win" : x >= start - 0.08 && x <= start + zone + 0.08 ? "near" : "miss";
+      $("nstop").textContent = tier === "win" ? "Perfect!" : tier === "near" ? "So close!" : "Missed";
+      setTimeout(() => res({ tier }), 800);
+    };
+    $("nstop").onclick = stop; $("nb").onclick = stop; setTimeout(() => $("nstop") && $("nstop").focus({ preventScroll: true }), 100);
+  });
+}
+// Payday rush: 8 seconds to catch falling coins and dodge bills.
+function rushGame() {
+  return new Promise(res => {
+    openTable(`<div class="mg" role="dialog" aria-label="Payday rush"><p class="eyebrow">Payday rush · 8 seconds</p><h3>Catch the coins, dodge the bills</h3>
+      <canvas id="rc" width="300" height="300"></canvas>
+      <p class="note">Drag on the box, or hold the arrows. Each coin adds to the bonus; each bill takes two away.</p>
+      <div class="row2"><button class="btn btn-ghost" id="rl" type="button" aria-label="Move left">◀</button><button class="btn btn-ghost" id="rr" type="button" aria-label="Move right">▶</button></div></div>`);
+    const c = $("rc"), x = c.getContext("2d");
+    let px = 150, dir = 0, items = [], score = 0, t = 0, spawn = 0, last = performance.now(), done = false, pops = [];
+    const move = (e) => { const r = c.getBoundingClientRect(); px = clamp((e.clientX - r.left) / r.width * 300, 24, 276); };
+    c.onpointermove = move; c.onpointerdown = (e) => { c.setPointerCapture(e.pointerId); move(e); };
+    const hold = (el, d) => { el.onpointerdown = () => dir = d; el.onpointerup = el.onpointerleave = () => { if (dir === d) dir = 0; }; };
+    hold($("rl"), -1); hold($("rr"), 1);
+    const key = (e) => { if (e.key === "ArrowLeft") dir = e.type === "keydown" ? -1 : 0; if (e.key === "ArrowRight") dir = e.type === "keydown" ? 1 : 0; };
+    window.addEventListener("keydown", key); window.addEventListener("keyup", key);
+    const frame = (now) => {
+      const dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt;
+      px = clamp(px + dir * 280 * dt, 24, 276);
+      if ((spawn -= dt) <= 0 && t < 7.6) { items.push({ x: 20 + Math.random() * 260, y: -12, v: 130 + Math.random() * 70 + t * 14, coin: Math.random() < 0.66 }); spawn = 0.32; }
+      for (const it of items) {
+        it.y += it.v * dt;
+        if (!it.hit && it.y > 252 && it.y < 284 && Math.abs(it.x - px) < 32) { it.hit = true; score += it.coin ? 1 : -2; pops.push({ x: it.x, y: 250, t: 0.7, s: it.coin ? "+1" : "−2", c: it.coin ? "#0E6B5C" : "#C2412D" }); }
+      }
+      items = items.filter(it => !it.hit && it.y < 320);
+      x.fillStyle = "#E8F4F1"; x.fillRect(0, 0, 300, 300);
+      x.fillStyle = "#CFE6DF"; x.fillRect(0, 286, 300, 14);
+      for (const it of items) {
+        if (it.coin) { x.fillStyle = "#E9B949"; x.beginPath(); x.arc(it.x, it.y, 11, 0, 7); x.fill(); x.fillStyle = "#7A5600"; x.font = "800 8px Figtree, sans-serif"; x.textAlign = "center"; x.fillText("RM", it.x, it.y + 3); }
+        else { x.fillStyle = "#C2412D"; x.fillRect(it.x - 13, it.y - 9, 26, 18); x.fillStyle = "#fff"; x.font = "800 8px Figtree, sans-serif"; x.textAlign = "center"; x.fillText("BILL", it.x, it.y + 3); }
+      }
+      x.fillStyle = "#0E6B5C"; x.beginPath(); x.moveTo(px - 32, 262); x.lineTo(px + 32, 262); x.lineTo(px + 24, 284); x.lineTo(px - 24, 284); x.fill();
+      pops.forEach(p => { p.t -= dt; p.y -= 30 * dt; x.globalAlpha = Math.max(0, p.t / 0.7); x.fillStyle = p.c; x.font = "800 16px Figtree, sans-serif"; x.fillText(p.s, p.x, p.y); x.globalAlpha = 1; });
+      pops = pops.filter(p => p.t > 0);
+      x.fillStyle = "#13211F"; x.font = "800 16px Figtree, sans-serif"; x.textAlign = "left"; x.fillText(`Coins: ${Math.max(0, score)}`, 10, 22);
+      x.textAlign = "right"; x.fillText(`${Math.max(0, 8 - t).toFixed(1)}s`, 290, 22);
+      if (t >= 8) {
+        done = true; window.removeEventListener("keydown", key); window.removeEventListener("keyup", key);
+        x.fillStyle = "rgba(19,33,31,.75)"; x.fillRect(0, 110, 300, 70); x.fillStyle = "#fff"; x.textAlign = "center"; x.font = "800 24px Figtree, sans-serif"; x.fillText(`${Math.max(0, score)} coins!`, 150, 153);
+        setTimeout(() => res({ score: Math.max(0, score) }), 900); return;
+      }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  });
+}
+// Spot the scam: three offers, one is a scam.
+const OFFERS_OK = ["Fixed deposit at a licensed bank. About 2.5% a year.", "Unit trust from a licensed provider. Returns not guaranteed; fees shown upfront.",
+  "Low-fee index fund. Value goes up and down with the market.", "Bank savings plan. Small, steady returns. You can withdraw anytime."];
+const OFFERS_SCAM = ["Guaranteed 20% a month! Recruit 3 friends to unlock bonus levels.", "AI trading bot doubles your money in 30 days. No licence needed, trust us.",
+  "Secret gold scheme: fixed 8% a month. Transfer to our director's personal account.", "Forex 'guru' on Telegram: send money now, profits guaranteed by Friday."];
+function scamGame() {
+  return new Promise(res => {
+    const ok = [...OFFERS_OK].sort(() => Math.random() - .5).slice(0, 2), scam = pick(OFFERS_SCAM);
+    const opts = [...ok.map(t => [t, false]), [scam, true]].sort(() => Math.random() - .5);
+    openTable(`<div class="mg" role="dialog" aria-label="Spot the scam"><p class="eyebrow">Spot the scam · Age ${ageOf(S)}</p>
+      <h3>Which one is the scam?</h3><p class="note">${esc(S.name)}'s friends share three "opportunities". Tap the one you would never put money into.</p>
+      <div class="acts">${opts.map(([t, sc], i) => `<button class="choice" type="button" data-s="${i}"><span style="font-size:14px;color:var(--ink)">${esc(t)}</span></button>`).join("")}</div>
+      <p class="note" id="scam-fb" aria-live="polite"></p></div>`);
+    $("table").querySelectorAll("[data-s]").forEach(b => b.onclick = () => {
+      const right = opts[+b.dataset.s][1];
+      $("table").querySelectorAll("[data-s]").forEach((x, i) => { x.disabled = true; if (opts[i][1]) x.style.borderColor = "#C2412D"; });
+      $("scam-fb").textContent = right ? "Correct! Guaranteed high returns and pressure to recruit are red flags." : "That one is legitimate. The red-bordered offer was the scam.";
+      setTimeout(() => res({ ok: right }), 1400);
+    });
+  });
+}
+// Guess the cost of the critical illness before the bill is revealed.
+async function costQuiz(p) {
+  const c = bigCost(S, p), max = Math.max(100000, round(c.total * 2.5, 10000)), start = round(S.salary * 8, 5000);
+  const html = `<div class="band" style="background:#C2412D;color:#C2412D">${ICONS.cross}<div style="color:#fff"><small>Critical illness · Age ${ageOf(S)}</small><h3>${esc(BIG[p].name)}</h3></div></div>
+    <div class="body quiz"><p>${esc(S.name)} ${esc(BIG[p].text)}</p>
+    <p style="font-weight:700">Quick question: how much will this cost in total?</p><p class="note">Treatment, salary lost while off work, and care at home.</p>
+    <div class="quizval" id="qv">${rm(start)}</div>
+    <input type="range" id="qg" min="0" max="${max}" step="5000" value="${start}" aria-label="Your guess in RM">
+    <div class="acts"><button class="btn btn-primary" type="button" data-c="ok">Lock in my guess</button></div></div>`;
+  const pr = showFront(html, true);
+  $("qg").oninput = () => { $("qv").textContent = rm(+$("qg").value); };
+  await pr;
+  return +$("qg").value;
+}
+// ---- Investment window ----
+const INV_YEARS = [2, 6, 10, 14, 18, 22, 26];
+function holdingsHTML(s) {
+  return Object.entries(ASSETS).filter(([a]) => s.inv[a] > 0).map(([a, d]) => {
+    const g = s.basis[a] ? s.inv[a] / s.basis[a] - 1 : 0;
+    return `<div><span>${d.name}</span><span><b>${rm(s.inv[a])}</b> <span style="color:${g >= 0 ? "var(--accent)" : "var(--bad)"}">${pct(g)}</span></span></div>`;
+  }).join("");
+}
+function investWindow(h) {
+  return new Promise(res => {
+    let asset = "fund";
+    const m = S.lastMarket, tot = invTotal(S);
+    openTable(`<div class="mg" role="dialog" aria-label="Investment window"><p class="eyebrow">Investment window · Age ${ageOf(S)}</p>
+      <h3>Put some savings to work?</h3>
+      <p class="note">Cash: <b>${rm(S.sav)}</b>${tot ? ` · Invested: <b>${rm(tot)}</b>` : ""}. In this game, returns are random. You might win big or lose big.</p>
+      ${tot ? `<div class="hold">${holdingsHTML(S)}</div>` : ""}
+      ${m ? `<p class="missed">Last year: ${["fund", "stock", "crypto"].map(a => `${ASSETS[a].short} ${pct(m[a])}`).join(" · ")}</p>` : ""}
+      <div class="assets" id="assets">${Object.entries(ASSETS).map(([k, a]) => `<button class="asset" type="button" data-a="${k}" aria-pressed="${k === asset}"><i style="color:${a.color}">${a.risk}</i><b>${a.name}</b><span>${a.note}</span></button>`).join("")}</div>
+      <div class="amt"><input id="inv-amt" type="number" inputmode="numeric" min="0" step="100" placeholder="Amount (RM)" aria-label="Amount to invest"><button type="button" data-q="0.1">10%</button><button type="button" data-q="0.25">25%</button><button type="button" data-q="0.5">50%</button></div>
+      <p class="err" id="inv-err" aria-live="polite"></p>
+      <div class="acts" style="grid-template-columns:1fr 1fr"><button class="btn btn-ghost" type="button" id="inv-skip">Not now</button><button class="btn btn-primary" type="button" id="inv-go">Invest</button></div></div>`);
+    $("assets").querySelectorAll(".asset").forEach(b => b.onclick = () => { asset = b.dataset.a; $("assets").querySelectorAll(".asset").forEach(x => x.setAttribute("aria-pressed", x === b)); });
+    $("table").querySelectorAll("[data-q]").forEach(b => b.onclick = () => { $("inv-amt").value = round(S.sav * +b.dataset.q, 100); });
+    $("inv-skip").onclick = () => { hideTable(); res(null); };
+    $("inv-go").onclick = () => {
+      const v = Math.floor(+$("inv-amt").value || 0);
+      if (v <= 0) { $("inv-err").textContent = "Type an amount, or tap Not now."; return; }
+      if (v > S.sav) { $("inv-err").textContent = `You only have ${rm(S.sav)} in cash.`; return; }
+      invest(S, v, asset); h.invest = { amt: v, asset }; hideTable(); renderHUD();
+      burst(["#3B6FD8", "#F2C14E"], 24, hero.position, true); toast(`Invested ${rm(v)} in ${ASSETS[asset].name}`, "Results show at each year end");
+      res(h.invest);
+    };
+    setTimeout(() => $("inv-amt") && $("inv-amt").focus({ preventScroll: true }), 200);
+  });
+}
+function claimHTML() {
+  return `<div class="band" style="background:#D99A1E;color:#D99A1E">${ICONS.shield}<div style="color:#fff"><small>Claim approved</small><h3>Your plan pays out</h3></div></div>
+  <div class="body"><p>Because ${esc(S.name)} bought the plan at age ${S.boughtAge}, the bills are covered and the family's savings stay safe.</p>
+  <div class="fx"><div><span>Lump sum paid</span><span class="up">+${rm(S.cover)}</span></div><div><span>Monthly while recovering</span><span class="up">${rm(round(S.salary * 0.7))}/mo</span></div><div><span>Premiums paid so far</span><span class="neu">${rm(S.premPaid)}</span></div></div>
+  <div class="acts"><button class="btn btn-gold" type="button" data-c="ok">Continue</button></div></div>`;
+}
+// Savings ran out: pick how to cover it. A refusal from relatives sends the player back to the remaining options.
+async function coverShortfall(h) {
+  while (S.sav < 0) {
+    const short = -S.sav, how = await showFront(fundHTML(), true);
+    if (how === "family" && Math.random() < refuseChance(S, short)) { S.famRefused = true; happy(S, -3); renderHUD(); await showFront(refusedHTML(short), true); continue; }
+    fund(S, how); h.fund = how; renderHUD();
+  }
+  hideTable();
+}
+function fundHTML() {
+  const short = -S.sav, famOff = S.famUses >= 2 || S.famRefused, after = S.card + short, lim = bankLimit(S);
+  const famSub = famOff ? (S.famRefused ? "They already said no. You can't ask again." : "You've asked twice already. No one can lend more.")
+    : S.famUses === 1 ? "Asked once before. They might say no this time." : "No interest, but you owe them and repay from future savings.";
+  const cardSub = after > lim ? `Debt would pass ${rm(lim)}. This means bankruptcy.`
+    : `Adds about ${rm(Math.max(100, round(after * 0.05)))}/mo repayment at 18% interest. Bankruptcy above ${rm(lim)}.`;
+  return `<div class="band" style="background:#C2412D;color:#C2412D">${ICONS.coin}<div style="color:#fff"><small>Savings empty · Age ${ageOf(S)}</small><h3>You're ${rm(short)} short</h3></div></div>
+  <div class="body"><p>The bills are due and the savings are gone. How will ${esc(S.name)} pay?</p>
+  ${S.card ? `<p class="missed">Credit card debt now: ${rm(S.card)} of the ${rm(lim)} bankruptcy line.</p>` : ""}
+  <div class="acts">
+    ${invTotal(S) > 0 ? (() => { const v = invTotal(S), b = Object.values(S.basis).reduce((a, x) => a + x, 0), m = S.lastMarket;
+      return `<button class="choice" type="button" data-c="sell"><b>Sell investments</b><span>Worth ${rm(v)}${v < b ? `, ${rm(b - v)} less than you put in. Selling now locks in the loss.` : "."}${m && m.stock < 0 ? ` Stocks ${pct(m.stock)} this year.` : ""}</span></button>`; })() : ""}
+    <button class="choice" type="button" data-c="charity" ${S.charity ? "disabled" : ""}><b>Ask for charity</b><span>${S.charity ? "Already used. You can only ask the public once." : "Crowdfunding covers it, once only. Costs pride and happiness."}</span></button>
+    <button class="choice" type="button" data-c="family" ${famOff ? "disabled" : ""}><b>Borrow from family and friends</b><span>${famSub}</span></button>
+    <button class="choice" type="button" data-c="card"><b>Credit card</b><span>${cardSub}</span></button>
+  </div></div>`;
+}
+function refusedHTML(short) {
+  return `<div class="band" style="background:#8E5A52;color:#8E5A52">${ICONS.heart}<div style="color:#fff"><small>Family and friends</small><h3>"Sorry, it's too much"</h3></div></div>
+  <div class="body"><p>${esc(S.name)} asks again for ${rm(short)}, but this time the relatives and friends can't help. It's too much money, and they still haven't been paid back.</p>
+  <div class="fx"><div><span>Happiness</span><span class="down">−3</span></div></div>
+  <div class="acts"><button class="btn btn-primary" type="button" data-c="ok">Find another way</button></div></div>`;
+}
+function bankruptHTML() {
+  return `<div class="band" style="background:#3A1E19;color:#3A1E19">${ICONS.down}<div style="color:#fff"><small>Age ${S.bankruptAge} · Game over</small><h3>Declared bankrupt</h3></div></div>
+  <div class="body"><p>The credit card debt reached ${rm(S.card)}, more than ${esc(S.name)} can ever repay. The bank takes legal action and ${esc(S.name)} is declared bankrupt.</p>
+  <div class="fx"><div><span>Credit card debt</span><span class="down">${rm(S.card)}</span></div><div><span>Interest paid so far</span><span class="down">${rm(S.interest)}</span></div>${S.fam ? `<div><span>Still owed to family</span><span class="down">${rm(S.fam)}</span></div>` : ""}</div>
+  <div class="acts"><button class="btn btn-primary" type="button" data-c="ok">See what happened</button></div></div>`;
+}
+function showCashflow() {
+  if (!S) return;
+  const ins = [["Salary", S.off > 0 ? 0 : S.salary], ["Side income", S.off > 0 ? 0 : S.side], ["Plan payout (while off work)", S.off > 0 && S.insured ? round(S.salary * 0.7) : 0]].filter(r => r[1] > 0 || r[0] === "Salary");
+  const outs = [["Living costs", S.living], [S.house ? "Home loan" : "Rent", housing(S)], ["Car loan", S.carLoan], ["Children", S.kidsCost], ["Medical and care", S.ongoing + (S.off > 0 ? S.care : 0)], ["Protection premium", round(S.premium / 12)], ["Credit card repayment", cardPay(S)]].filter(r => r[1] > 0);
+  const tin = ins.reduce((a, r) => a + r[1], 0), tout = outs.reduce((a, r) => a + r[1], 0), max = Math.max(tin, tout, 1), net = tin - tout;
+  const row = (r, c) => `<div class="cfrow"><span>${r[0]}</span><b>${rm(r[1])}</b><div class="bar"><i style="width:${r[1] / max * 100}%;background:${c}"></i></div></div>`;
+  const cf = $("cf");
+  cf.innerHTML = (`<div class="cfsheet" role="dialog" aria-label="Monthly cash flow"><p class="eyebrow">Monthly cash flow · Age ${ageOf(S)}</p><h3>Where the money goes</h3>
+    <p class="cfsec">Money in · ${rm(tin)}</p>${ins.map(r => row(r, "#2E9E6B")).join("")}
+    <p class="cfsec">Money out · ${rm(tout)}</p>${outs.map(r => row(r, "#D9822B")).join("")}
+    <div class="cfnet"><span>Left each month</span><b style="color:${net < 0 ? "var(--bad)" : "var(--accent)"}">${net < 0 ? "−" : "+"}${rm(net)}</b></div>
+    ${S.card + S.fam > 0 ? `<p class="note">Debts: ${S.card ? `credit card ${rm(S.card)} ` : ""}${S.fam ? `family ${rm(S.fam)}` : ""}.${S.card ? ` Bankruptcy if card debt passes ${rm(bankLimit(S))}.` : ""}</p>` : ""}
+    ${S.house ? `<p class="note">Home value ${rm(S.houseValue)}, loan left ${rm(S.houseDebt)}, equity ${rm(equity(S))}.</p>` : ""}
+    ${invTotal(S) > 0 ? `<p class="cfsec">Investments · ${rm(invTotal(S))}</p><div class="hold">${holdingsHTML(S)}</div>` : ""}
+    <button class="btn btn-primary" type="button" id="cf-close">Close</button></div>`);
+  cf.hidden = false; $("cf-close").focus({ preventScroll: true });
+  $("cf-close").onclick = () => { cf.hidden = true; cf.innerHTML = ""; };
+}
+
+// Replay the same life with the opposite protection decision (shortfalls go on a credit card).
+const boughtPlan = () => history.some(h => CARDS[h.id].type === "offer" && h.choice === "buy");
+function whatIf() {
+  const everBought = boughtPlan();
+  const a = newLife(S.start);
+  for (const h of history) {
+    let id = h.id, choice = h.choice;
+    if (id === "offer1") choice = everBought ? "decline" : "buy";
+    if (id === "offer2") choice = "decline";
+    if (id === "recover" && a.off < 12) id = "quiet";
+    if (id === "houseBoom" && !a.house) id = "quiet";
+    if ((id === "rentUp" || id === "landlord") && a.house) id = "quiet";
+    if (a.bankrupt) break;
+    CARDS[id].apply(a, choice, h.p);
+    altYear(a, h);
+  }
+  while (a.year < YEARS && !a.bankrupt) altYear(a, null);
+  return a;
+}
+// The "what if" life makes the same investments; when short it sells investments, borrows from family once, then uses the card.
+function altYear(a, h) {
+  closeYear(a);
+  while (a.sav < 0) fund(a, invTotal(a) > 0 ? "sell" : a.famUses < 1 ? "family" : "card");
+  if (isBankrupt(a)) { a.bankrupt = true; a.bankruptAge = ageOf(a); }
+  if (h && h.invest) invest(a, h.invest.amt, h.invest.asset);
+  checkGoal(a);
+  a.year++;
+}
+function badgesOf(s) {
+  const b = [];
+  if (s.goalDone != null) b.push(["Dream achieved", GOALS[s.goal].name]);
+  if (s.insured) b.push(["Protected", `Bought the plan at ${s.boughtAge}`]);
+  if (s.hadBig && !s.bankrupt) b.push(["Survivor", `Came through ${s.bigName.toLowerCase()}`]);
+  if (!s.bankrupt && s.card + s.fam === 0) b.push(["Debt-free", "Nothing owed at the end"]);
+  if (s.promoWins >= 1) b.push(["Rising star", `Won ${s.promoWins} promotion${s.promoWins > 1 ? "s" : ""}`]);
+  if (s.scamSpotted) b.push(["Scam spotter", "Saw through a scam"]);
+  if (s.quizClose) b.push(["Eyes open", "Guessed the illness cost"]);
+  if (invTotal(s) >= s.startSalary * 24) b.push(["Investor", "Portfolio worth 2+ years of salary"]);
+  if (s.everHouse) b.push(["Homeowner", "Bought a home"]);
+  if (s.married) b.push(["Family", s.kids ? `Married with ${s.kids} kid${s.kids > 1 ? "s" : ""}` : "Married"]);
+  if (s.forcedSold > 0) b.push(["Forced seller", `Sold ${rm(s.forcedSold)} of investments to pay bills`, true]);
+  if (s.bankrupt) b.push(["Bankrupt", "Credit card debt got out of hand", true]);
+  return b;
+}
+
+function finish() {
+  mode = "end"; hideTable(); $("bottom").hidden = true;
+  setLying(false);
+  if (!S.bankrupt) burst(["#F2C14E", "#E86A5A", "#3B6FD8", "#2E9E6B", "#FFFFFF"], 120, hero.position);
+  const nw = netWorth(S), debt = S.card + S.fam, alt = whatIf(), altNw = netWorth(alt), endAge = S.bankrupt ? S.bankruptAge : S.age0 + YEARS;
+  const md = mood(S.happy), altMd = mood(alt.happy);
+  const happyEnd = !S.bankrupt && debt === 0 && (!S.hadBig || S.bigInsured) && S.happy >= 55;
+  const head = S.bankrupt ? `Game over. ${esc(S.name)} was declared bankrupt at ${endAge}.`
+    : happyEnd
+    ? (S.hadBig && S.bigInsured ? `Happy ending. ${esc(S.name)} beat ${S.bigName.toLowerCase()} and reached ${endAge} ${md[0].toLowerCase()}.` : `Happy ending. ${esc(S.name)} reached ${endAge} debt-free and ${md[0].toLowerCase()}.`)
+    : debt > 0 ? `${esc(S.name)} reached ${endAge} ${md[0].toLowerCase()}, still owing ${rm(debt)}.`
+    : S.hadBig && !S.bigInsured ? `${esc(S.name)} reached ${endAge}, but ${S.bigName.toLowerCase()} cost the family ${rm(S.bigTotal)}.`
+    : `${esc(S.name)} reached ${endAge}, but money stress took its toll.`;
+  const diff = altNw - nw, bought = boughtPlan();
+  const nwTxt = (v) => `${v < 0 ? "−" : ""}${rm(v)}`;
+  const altEnd = alt.bankrupt ? `goes <b>bankrupt at ${alt.bankruptAge}</b>` : `ends at <b>${nwTxt(altNw)}</b>${alt.card + alt.fam > 0 ? ` with <b>${rm(alt.card + alt.fam)}</b> of debt` : ""}, happiness <b>${alt.happy} (${altMd[0]})</b>`;
+  const whatIfLine = bought ? `Without the plan, the same life ${altEnd}.` : `With the plan from age ${S.age0 + 1}, the same life ${altEnd}.`;
+  const good = bought;
+  const fundTxt = { sell: "sold investments", charity: "asked for charity", family: "borrowed from family and friends", card: "used credit card" };
+  const timeline = history.filter(h => h.id !== "quiet").map(h => `<div><em>Age ${S.age0 + h.year}</em><i style="background:${TYPES[h.claim ? "claim" : h.type].color}"></i><span>${esc(h.title)}${h.choice && CARDS[h.id].choices ? ` · ${esc(CARDS[h.id].choices.find(c => c[0] === h.choice)[1].toLowerCase())}` : ""}${h.claim ? " · plan paid out" : ""}${h.fund ? ` · ${fundTxt[h.fund]}` : ""}${h.invest ? ` · invested ${rm(h.invest.amt)} in ${ASSETS[h.invest.asset].short}` : ""}</span></div>`).join("");
+  const msg = `Hi TC, I just played Life Path 30 as ${S.name}, ${S.occ}. I ${bought ? `bought the protection plan at ${S.boughtAge}` : "never bought protection"}${S.hadBig ? ` and got ${S.bigName.toLowerCase()} along the way` : ""}. ${S.bankrupt ? `I went bankrupt at age ${endAge}.` : `I finished at age ${endAge} worth ${nwTxt(nw)}, with a happiness score of ${S.happy}/100.`} I'd like to see what my real plan looks like.`;
+  const wa = (WHATSAPP_NUMBER ? `https://wa.me/${WHATSAPP_NUMBER}` : "https://wa.me/") + "?text=" + encodeURIComponent(msg);
+  $("end-sheet").innerHTML = `
+    <p class="eyebrow">${S.bankrupt ? `Bankrupt at ${endAge} · Game over` : `Age ${endAge} · Your life in review`}</p>
+    <h2>${head}</h2>
+    <div class="stats" style="background:#E3EAE8">
+      <div><span>Net worth (cash + home + investments − debts)</span><div class="big" style="font-size:30px;color:${nw < 0 ? "var(--bad)" : "var(--accent)"}">${nwTxt(nw)}</div></div>
+      <div><span>Happiness at ${endAge}</span><div class="big" style="font-size:30px;color:${md[1]}">${S.happy}<small style="font-size:14px"> /100</small></div><b style="font-size:13px;color:${md[1]}">${md[0]}</b><div class="heart"><i style="width:${S.happy}%"></i></div></div>
+    </div>
+    <div class="whatif ${S.goalDone != null ? "good" : "bad"}"><b>Dream: ${GOALS[S.goal].name} ${S.goalDone != null ? "✓" : "✗"}</b><span>${S.goalDone != null ? `Achieved at age ${S.age0 + S.goalDone}. Happiness +12.` : `Not reached. ${GOALS[S.goal].desc}.`}</span></div>
+    <div class="stats">
+      <div><span>Cash savings</span><b>${rm(S.sav)}</b></div>
+      <div><span>Home equity</span><b>${rm(equity(S))}</b></div>
+      <div><span>Investments</span><b>${rm(invTotal(S))}</b>${S.invested ? `<span>Put in ${rm(S.invested)}${S.forcedSold ? `, sold ${rm(S.forcedSold)} to pay bills` : ""}</span>` : ""}</div>
+      <div><span>Family</span><b>${S.married ? "Married" : "Single"}${S.kids ? `, ${S.kids} kid${S.kids > 1 ? "s" : ""}` : ""}</b></div>
+      <div><span>Salary at ${endAge}</span><b>${rm(S.salary)}/mo</b></div>
+      <div><span>Premiums paid</span><b>${rm(S.premPaid)}</b></div>
+      <div><span>Plan paid out</span><b>${rm(S.claims)}</b></div>
+      <div><span>Credit card interest</span><b>${rm(S.interest)}</b></div>
+      <div><span>Charity / family help</span><b>${rm(S.charityGot + S.famBorrowed)}</b></div>
+    </div>
+    ${S.hadBig ? `<div class="whatif bad"><b>${S.bigName}: total cost ${rm(S.bigTotal)}</b><span>Treatment, lost salary and care. ${S.bigInsured ? `The plan paid ${rm(S.claims)} of it.` : "Insurance paid RM 0 of it."}</span></div>` : ""}
+    <div class="whatif ${good ? "good" : "bad"}"><b>What if?</b><span>${whatIfLine}</span></div>
+    <p style="font-weight:700">Badges</p>
+    <div class="badgegrid">${badgesOf(S).map(([t, d, neg]) => `<div class="bdg${neg ? " neg" : ""}"><b>${t}</b><span>${esc(d)}</span></div>`).join("")}</div>
+    <p style="font-weight:700">Your 30 years</p>
+    <div class="timeline">${timeline}</div>
+    <a class="btn btn-primary" href="${wa}" target="_blank" rel="noopener">Chat with TC about my result</a>
+    <button class="btn btn-ghost" id="copy" type="button">Copy my result</button>
+    <p class="copied" id="copied" aria-live="polite"></p>
+    <textarea class="fallback" id="fallback" readonly hidden>${esc(msg)}</textarea>
+    <button class="btn btn-ghost" id="again" type="button">Play another life</button>
+    <p class="note">A game for illustration and education only. Incomes, costs, property prices, premiums and payouts are simplified example numbers, not medical data, a quote, or the terms of any real product. Real policies have their own definitions, conditions, waiting periods and exclusions.</p>`;
+  $("end").hidden = false; $("hud").hidden = true; $("end").scrollTop = 0;
+  $("again").onclick = () => { runId++; $("end").hidden = true; $("start").hidden = false; mode = "intro"; };
+  $("copy").onclick = () => { const fail = () => { $("copied").textContent = "Copy didn't work here. Select the text below."; $("fallback").hidden = false; $("fallback").select(); };
+    try { navigator.clipboard.writeText(msg).then(() => { $("copied").textContent = "Copied. Paste it into a message to TC."; }, fail); } catch (e) { fail(); } };
+}
+
+$("chips").onclick = showCashflow;
+initStart();
+</script>
+
+</body>
+</html>
